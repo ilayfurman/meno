@@ -1,17 +1,18 @@
 import React, { useMemo, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { SegmentedControl } from '../components/SegmentedControl';
 import { IconGridSelector, type IconGridItem } from '../components/IconGridSelector';
 import { Chip } from '../components/Chip';
 import { PrimaryButton } from '../components/PrimaryButton';
+import { RecipeCard } from '../components/RecipeCard';
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
-import { difficultyOptions, timeOptions, type DifficultyOption, type TimeOption, type VibeOption } from '../types';
-import { generateRecipes } from '../ai/openai';
+import { difficultyOptions, timeOptions, type DifficultyOption, type Recipe, type RecipeSummary, type TimeOption, type VibeOption } from '../types';
 import { useAppContext } from '../navigation/AppContext';
 import type { RootStackParamList } from '../types/navigation';
+import { buildSingleRecipeShare } from '../utils/recipeShare';
 
 const timeChoices = [...timeOptions, 60] as const;
 const dietaryChips = ['GF', 'Vegetarian', 'Vegan', 'Dairy Free', 'Nut Free', 'Kosher'];
@@ -30,7 +31,17 @@ export function TonightScreen() {
   const [vibe, setVibe] = useState<VibeOption>('comfort');
   const [difficulty, setDifficulty] = useState<DifficultyOption>('easy');
   const [loading, setLoading] = useState(false);
-  const { preferences } = useAppContext();
+  const [savedIds, setSavedIds] = useState<string[]>([]);
+  const {
+    preferences,
+    generatedRuns,
+    startGenerationRun,
+    hydrateRun,
+    getRecipeForRun,
+    removeGeneratedRun,
+    removeRecipeFromGeneratedRun,
+    saveRecipe,
+  } = useAppContext();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
   const dietaryPreview = useMemo(() => {
@@ -44,8 +55,8 @@ export function TonightScreen() {
     try {
       setLoading(true);
       const request = { time: time === 60 ? 45 : time, vibe, difficulty };
-      const recipes = await generateRecipes({ preferences, request, count: 3 });
-      navigation.navigate('Results', { recipes, requestId: String(Date.now()), request });
+      const runId = await startGenerationRun(request);
+      void hydrateRun(runId);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unexpected error';
       Alert.alert('Generation failed', message.includes('insufficient_quota') ? 'OpenAI billing/quota is unavailable for this key.' : message);
@@ -53,6 +64,58 @@ export function TonightScreen() {
       setLoading(false);
     }
   };
+
+  const onSaveRecipe = async (recipeId: string) => {
+    const recipe = generatedRuns
+      .map((run) => run.recipesById[recipeId])
+      .find((item): item is Recipe => Boolean(item));
+    if (!recipe) {
+      Alert.alert('Recipe still loading', 'Please wait until this recipe is fully generated.');
+      return;
+    }
+    const added = await saveRecipe(recipe);
+    if (added) {
+      setSavedIds((prev) => [...prev, recipeId]);
+      Alert.alert('Saved', 'Recipe added to cookbook.');
+      return;
+    }
+    setSavedIds((prev) => (prev.includes(recipeId) ? prev : [...prev, recipeId]));
+    Alert.alert('Already saved', 'This recipe is already in your cookbook.');
+  };
+
+  const onShareRecipe = async (recipeId: string) => {
+    const recipe = generatedRuns
+      .map((run) => run.recipesById[recipeId])
+      .find((item): item is Recipe => Boolean(item));
+    if (!recipe) {
+      Alert.alert('Recipe still loading', 'Please wait until this recipe is fully generated.');
+      return;
+    }
+    try {
+      await Share.share({
+        title: recipe.title,
+        message: buildSingleRecipeShare(recipe),
+      });
+    } catch {
+      Alert.alert('Share failed', 'Could not open share sheet.');
+    }
+  };
+
+  const summaryToPlaceholderRecipe = (summary: RecipeSummary): Recipe => ({
+    id: summary.id,
+    title: summary.title,
+    cuisine: summary.cuisine,
+    servings: summary.servings_hint ?? 2,
+    total_time_minutes: summary.total_time_minutes,
+    difficulty: summary.difficulty,
+    short_hook: summary.short_hook,
+    ingredients: [],
+    steps: [],
+    substitutions: [],
+    dietary_tags: summary.dietary_tags,
+    allergen_warnings: summary.allergen_warnings,
+    completion_state: 'summary',
+  });
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
@@ -84,6 +147,65 @@ export function TonightScreen() {
       </View>
 
       <PrimaryButton title="Show me 3 ideas" onPress={onGenerate} loading={loading} />
+
+      {generatedRuns.map((run, runIndex) => (
+        <View key={run.id} style={styles.runSection}>
+          <View style={styles.runHeader}>
+            <View>
+              <Text style={styles.runTitle}>{runIndex === 0 ? 'Current results' : `Previous results ${runIndex}`}</Text>
+              <Text style={styles.runMeta}>
+                {new Date(run.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                {' · '}
+                {run.request.time} min · {run.request.vibe}
+              </Text>
+            </View>
+            <Pressable style={styles.dismissRunButton} onPress={() => removeGeneratedRun(run.id)}>
+              <Text style={styles.dismissRunText}>Dismiss run</Text>
+            </Pressable>
+          </View>
+
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.runCards}>
+            {run.summaries.map((summary, recipeIndex) => {
+              const hydratedRecipe = getRecipeForRun(run.id, summary.id);
+              const status = run.statusById[summary.id] ?? 'pending';
+              const recipe = hydratedRecipe ?? summaryToPlaceholderRecipe(summary);
+
+              return (
+              <View key={`${run.id}-${summary.id}-${recipeIndex}`} style={styles.runCardWrap}>
+                <RecipeCard
+                  recipe={recipe}
+                  compact
+                  onSave={status === 'ready' && !savedIds.includes(recipe.id) ? () => void onSaveRecipe(recipe.id) : undefined}
+                  onShare={status === 'ready' ? () => void onShareRecipe(recipe.id) : undefined}
+                  onRemove={() => removeRecipeFromGeneratedRun(run.id, summary.id)}
+                  onPress={() =>
+                    navigation.navigate('RecipeDetail', {
+                      recipe,
+                      request: run.request,
+                      requestId: run.id,
+                      listIndex: recipeIndex,
+                      runId: run.id,
+                      sourceRecipeId: summary.id,
+                    })
+                  }
+                />
+                <Pressable
+                  style={styles.statusBadge}
+                  onPress={() => {
+                    if (status === 'error') {
+                      void hydrateRun(run.id);
+                    }
+                  }}
+                >
+                  <Text style={styles.statusBadgeText}>
+                    {status === 'pending' ? 'Finishing recipe...' : status === 'error' ? 'Tap to retry later' : 'Ready'}
+                  </Text>
+                </Pressable>
+              </View>
+            )})}
+          </ScrollView>
+        </View>
+      ))}
     </ScrollView>
   );
 }
@@ -121,5 +243,58 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
+  },
+  runSection: {
+    gap: 8,
+  },
+  runHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 8,
+  },
+  runTitle: {
+    color: colors.textPrimary,
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  runMeta: {
+    color: colors.textSecondary,
+    fontSize: 13,
+  },
+  dismissRunButton: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: colors.surface,
+  },
+  dismissRunText: {
+    color: colors.textSecondary,
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  runCards: {
+    gap: 10,
+    paddingRight: 16,
+  },
+  runCardWrap: {
+    width: 262,
+    gap: 6,
+  },
+  statusBadge: {
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: '#fff',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  statusBadgeText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '600',
   },
 });

@@ -18,6 +18,8 @@ export type RootStackParamList = {
     requestId: string;
     request: GenerationRequest;
     listIndex?: number;
+    runId?: string;
+    sourceRecipeId?: string;
   };
   Account: undefined;
   FoodPreferences: undefined;

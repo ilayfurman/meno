@@ -1,5 +1,10 @@
-import { recipeJsonSchema, recipeListSchema } from './schemas';
-import type { GenerationRequest, Recipe, UserPreferences } from '../types';
+import {
+  recipeJsonSchema,
+  recipeListSchema,
+  recipeSummaryJsonSchema,
+  recipeSummaryListSchema,
+} from './schemas';
+import type { GenerationRequest, Recipe, RecipeSummary, UserPreferences } from '../types';
 
 const OPENAI_API_KEY = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env
   ?.EXPO_PUBLIC_OPENAI_API_KEY;
@@ -14,11 +19,25 @@ interface GenerateRecipesParams {
   baseRecipe?: Recipe;
 }
 
+interface GenerateSummaryParams {
+  preferences: UserPreferences;
+  request: GenerationRequest;
+  count: number;
+}
+
+interface GenerateFullRecipeParams {
+  preferences: UserPreferences;
+  request: GenerationRequest;
+  summary: RecipeSummary;
+  swapInstruction?: string;
+  baseRecipe?: Recipe;
+}
+
 function buildPrompt(params: GenerateRecipesParams): string {
   const { preferences, request, count, swapInstruction, baseRecipe } = params;
 
   const swapBlock = swapInstruction
-    ? `\nSwap request: ${swapInstruction}\nBase recipe to transform: ${JSON.stringify(baseRecipe)}`
+    ? `\nAdjustment request: ${swapInstruction}\nBase recipe to transform and improve: ${JSON.stringify(baseRecipe)}`
     : '';
 
   return [
@@ -31,12 +50,19 @@ function buildPrompt(params: GenerateRecipesParams): string {
     `Preferred cuisines: ${preferences.cuisinesLiked.join(', ') || 'any'}.`,
     `Spice level: ${preferences.spiceLevel}.`,
     'Return practical weeknight dinners with coherent quantities and steps.',
+    'Set completion_state to "full".',
+    'Output numeric ingredient quantities when possible via quantity_value and quantity_unit.',
+    'For non-numeric items, set quantity_value to null and populate quantity_text.',
     'If allergens conflict with substitutions, mention warnings clearly.',
     swapBlock,
   ].join('\n');
 }
 
-async function requestRecipes(messages: Array<{ role: 'system' | 'user'; content: string }>) {
+async function requestStructured(
+  messages: Array<{ role: 'system' | 'user'; content: string }>,
+  schemaName: string,
+  schema: Record<string, unknown>,
+) {
   if (!OPENAI_API_KEY) {
     throw new Error('Missing EXPO_PUBLIC_OPENAI_API_KEY in environment.');
   }
@@ -53,9 +79,9 @@ async function requestRecipes(messages: Array<{ role: 'system' | 'user'; content
       response_format: {
         type: 'json_schema',
         json_schema: {
-          name: 'recipe_response',
+          name: schemaName,
           strict: true,
-          schema: recipeJsonSchema,
+          schema,
         },
       },
     }),
@@ -105,6 +131,113 @@ async function requestText(messages: Array<{ role: 'system' | 'user'; content: s
   return raw as string;
 }
 
+function normalizeRecipe(recipe: Recipe): Recipe {
+  return {
+    ...recipe,
+    completion_state: 'full',
+    ingredients: recipe.ingredients.map((ingredient) => ({
+      ...ingredient,
+      quantity: ingredient.quantity ?? ingredient.quantity_text ?? '',
+      unit: ingredient.unit ?? ingredient.quantity_unit ?? '',
+      quantity_value: ingredient.quantity_value ?? null,
+      quantity_unit: ingredient.quantity_unit ?? ingredient.unit ?? null,
+      quantity_text: ingredient.quantity_text ?? ingredient.quantity ?? null,
+    })),
+  };
+}
+
+export async function generateRecipeSummaries(params: GenerateSummaryParams): Promise<RecipeSummary[]> {
+  const userPrompt = [
+    `Create ${params.count} dinner idea summaries.`,
+    `Time target: ${params.request.time} minutes max.`,
+    `Vibe: ${params.request.vibe}.`,
+    `Difficulty: ${params.request.difficulty}.`,
+    `Dietary restriction: ${params.preferences.dietaryRestriction}.`,
+    `Allergies to avoid: ${params.preferences.allergies.join(', ') || 'none'}.`,
+    `Preferred cuisines: ${params.preferences.cuisinesLiked.join(', ') || 'any'}.`,
+    `Spice level: ${params.preferences.spiceLevel}.`,
+    'Return summary cards only (no ingredients, no steps).',
+  ].join('\n');
+
+  const baseMessages: Array<{ role: 'system' | 'user'; content: string }> = [
+    {
+      role: 'system',
+      content: 'You are a strict recipe ideation generator. Return only valid JSON matching schema. No markdown.',
+    },
+    { role: 'user', content: userPrompt },
+  ];
+
+  const firstRaw = await requestStructured(baseMessages, 'recipe_summaries', recipeSummaryJsonSchema);
+
+  try {
+    return recipeSummaryListSchema.parse(JSON.parse(firstRaw)).recipes;
+  } catch {
+    const secondRaw = await requestStructured(
+      [
+        ...baseMessages,
+        {
+          role: 'user',
+          content: 'Fix JSON: output strictly valid schema-compliant JSON only.',
+        },
+      ],
+      'recipe_summaries_fix',
+      recipeSummaryJsonSchema,
+    );
+    return recipeSummaryListSchema.parse(JSON.parse(secondRaw)).recipes;
+  }
+}
+
+export async function generateFullRecipeFromSummary(params: GenerateFullRecipeParams): Promise<Recipe> {
+  const swapBlock = params.swapInstruction
+    ? `\nAdjustment request: ${params.swapInstruction}\nBase recipe to transform and improve: ${JSON.stringify(params.baseRecipe)}`
+    : '';
+
+  const userPrompt = [
+    'Generate exactly 1 full recipe from this summary idea.',
+    `Summary: ${JSON.stringify(params.summary)}`,
+    `Time target: ${params.request.time} minutes max.`,
+    `Vibe: ${params.request.vibe}.`,
+    `Difficulty: ${params.request.difficulty}.`,
+    `Dietary restriction: ${params.preferences.dietaryRestriction}.`,
+    `Allergies to avoid: ${params.preferences.allergies.join(', ') || 'none'}.`,
+    `Preferred cuisines: ${params.preferences.cuisinesLiked.join(', ') || 'any'}.`,
+    `Spice level: ${params.preferences.spiceLevel}.`,
+    'Output numeric ingredient quantities when possible via quantity_value and quantity_unit.',
+    'For non-numeric items like "to taste", set quantity_value to null and fill quantity_text.',
+    'Set completion_state to "full".',
+    swapBlock,
+  ].join('\n');
+
+  const baseMessages: Array<{ role: 'system' | 'user'; content: string }> = [
+    {
+      role: 'system',
+      content:
+        'You are a strict recipe generator. Return only valid JSON matching schema. No markdown. No prose.',
+    },
+    { role: 'user', content: userPrompt },
+  ];
+
+  const firstRaw = await requestStructured(baseMessages, 'recipe_full', recipeJsonSchema);
+  try {
+    const parsed = recipeListSchema.parse(JSON.parse(firstRaw)).recipes[0];
+    return normalizeRecipe(parsed);
+  } catch {
+    const secondRaw = await requestStructured(
+      [
+        ...baseMessages,
+        {
+          role: 'user',
+          content: 'Fix JSON: output strictly valid schema-compliant JSON only.',
+        },
+      ],
+      'recipe_full_fix',
+      recipeJsonSchema,
+    );
+    const parsed = recipeListSchema.parse(JSON.parse(secondRaw)).recipes[0];
+    return normalizeRecipe(parsed);
+  }
+}
+
 export async function generateRecipes(params: GenerateRecipesParams): Promise<Recipe[]> {
   const userPrompt = buildPrompt(params);
   const baseMessages: Array<{ role: 'system' | 'user'; content: string }> = [
@@ -116,20 +249,23 @@ export async function generateRecipes(params: GenerateRecipesParams): Promise<Re
     { role: 'user', content: userPrompt },
   ];
 
-  const firstRaw = await requestRecipes(baseMessages);
-
+  const firstRaw = await requestStructured(baseMessages, 'recipe_response', recipeJsonSchema);
   try {
-    return recipeListSchema.parse(JSON.parse(firstRaw)).recipes;
+    return recipeListSchema.parse(JSON.parse(firstRaw)).recipes.map(normalizeRecipe);
   } catch {
-    const secondRaw = await requestRecipes([
-      ...baseMessages,
-      {
-        role: 'user',
-        content:
-          'Fix JSON: return the same answer but strictly valid JSON matching schema. Output only JSON.',
-      },
-    ]);
-    return recipeListSchema.parse(JSON.parse(secondRaw)).recipes;
+    const secondRaw = await requestStructured(
+      [
+        ...baseMessages,
+        {
+          role: 'user',
+          content:
+            'Fix JSON: return the same answer but strictly valid JSON matching schema. Output only JSON.',
+        },
+      ],
+      'recipe_response_fix',
+      recipeJsonSchema,
+    );
+    return recipeListSchema.parse(JSON.parse(secondRaw)).recipes.map(normalizeRecipe);
   }
 }
 

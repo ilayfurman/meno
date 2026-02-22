@@ -69,6 +69,9 @@ export interface Ingredient {
   quantity: string;
   unit: string;
   notes?: string | null;
+  quantity_value?: number | null;
+  quantity_unit?: string | null;
+  quantity_text?: string | null;
 }
 
 export interface RecipeStep {
@@ -96,4 +99,34 @@ export interface Recipe {
   substitutions: RecipeSubstitution[];
   dietary_tags: string[];
   allergen_warnings: string[];
+  recipe_family_id?: string;
+  version_number?: number;
+  based_on_recipe_id?: string;
+  change_note?: string;
+  created_at?: number;
+  completion_state?: 'summary' | 'full';
+}
+
+export interface RecipeSummary {
+  id: string;
+  title: string;
+  cuisine: string;
+  servings_hint?: number;
+  total_time_minutes: number;
+  difficulty: string;
+  short_hook: string;
+  dietary_tags: string[];
+  allergen_warnings: string[];
+}
+
+export interface GeneratedRecipeRun {
+  id: string;
+  createdAt: number;
+  request: GenerationRequest;
+  requestHash: string;
+  summaries: RecipeSummary[];
+  recipesById: Record<string, Recipe>;
+  statusById: Record<string, 'pending' | 'ready' | 'error'>;
+  errorsById: Record<string, string>;
+  stage: 'summaries_ready' | 'hydrating' | 'done';
 }

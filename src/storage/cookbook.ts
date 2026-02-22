@@ -20,19 +20,74 @@ async function setCookbook(recipes: Recipe[]): Promise<void> {
   await AsyncStorage.setItem(COOKBOOK_KEY, JSON.stringify(recipes));
 }
 
+function withRecipeMetadata(recipe: Recipe): Recipe {
+  return {
+    ...recipe,
+    recipe_family_id: recipe.recipe_family_id ?? recipe.id,
+    version_number: recipe.version_number ?? 1,
+    created_at: recipe.created_at ?? Date.now(),
+  };
+}
+
 export async function setCookbookOrder(recipes: Recipe[]): Promise<void> {
   await setCookbook(recipes);
 }
 
 export async function saveRecipeToCookbook(recipe: Recipe): Promise<boolean> {
   const existing = await getCookbook();
-  const alreadySaved = existing.some((r) => r.id === recipe.id);
+  const normalized = withRecipeMetadata(recipe);
+  const alreadySaved = existing.some((r) => r.id === normalized.id);
   if (alreadySaved) {
     return false;
   }
-  const deduped = [recipe, ...existing.filter((r) => r.id !== recipe.id)];
+  const deduped = [normalized, ...existing.filter((r) => r.id !== normalized.id)];
   await setCookbook(deduped);
   return true;
+}
+
+interface SaveRecipeRevisionParams {
+  baseRecipeId: string;
+  revisedRecipe: Recipe;
+  replaceBase?: boolean;
+  changeNote?: string;
+}
+
+export async function saveRecipeRevision(params: SaveRecipeRevisionParams): Promise<Recipe> {
+  const { baseRecipeId, revisedRecipe, replaceBase, changeNote } = params;
+  const existing = await getCookbook();
+  const base = existing.find((item) => item.id === baseRecipeId);
+
+  if (!base) {
+    const fallback = withRecipeMetadata({
+      ...revisedRecipe,
+      change_note: changeNote ?? revisedRecipe.change_note,
+    });
+    await setCookbook([fallback, ...existing.filter((item) => item.id !== fallback.id)]);
+    return fallback;
+  }
+
+  const familyId = base.recipe_family_id ?? base.id;
+  const familyVersions = existing
+    .filter((item) => (item.recipe_family_id ?? item.id) === familyId)
+    .map((item) => item.version_number ?? 1);
+  const nextVersion = Math.max(...familyVersions, 1) + 1;
+
+  const normalized: Recipe = {
+    ...revisedRecipe,
+    id: `${familyId}-v${nextVersion}-${Date.now()}`,
+    recipe_family_id: familyId,
+    version_number: nextVersion,
+    based_on_recipe_id: base.id,
+    change_note: changeNote ?? revisedRecipe.change_note,
+    created_at: Date.now(),
+  };
+
+  const nextList = replaceBase
+    ? [normalized, ...existing.filter((item) => item.id !== base.id)]
+    : [normalized, ...existing];
+
+  await setCookbook(nextList);
+  return normalized;
 }
 
 export async function removeRecipeFromCookbook(id: string): Promise<void> {
