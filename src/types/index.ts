@@ -37,6 +37,18 @@ export interface UserPreferences {
   onboardingComplete: boolean;
 }
 
+export interface UserProfile {
+  name: string;
+  email: string;
+}
+
+export type PlanTier = 'free' | 'plus' | 'pro';
+
+export interface BillingInfo {
+  plan: PlanTier;
+  renewalDate?: string;
+}
+
 export const timeOptions = [15, 30, 45] as const;
 export type TimeOption = (typeof timeOptions)[number];
 
@@ -56,13 +68,13 @@ export interface Ingredient {
   name: string;
   quantity: string;
   unit: string;
-  notes?: string;
+  notes?: string | null;
 }
 
 export interface RecipeStep {
   idx: number;
   text: string;
-  timer_seconds?: number;
+  timer_seconds?: number | null;
 }
 
 export interface RecipeSubstitution {

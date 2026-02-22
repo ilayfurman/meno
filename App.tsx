@@ -4,14 +4,21 @@ import { StatusBar } from 'expo-status-bar';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import { AppContextProvider } from './src/navigation/AppContext';
 import { defaultPreferences, getPreferences, savePreferences } from './src/storage/preferences';
-import { saveRecipeToCookbook } from './src/storage/cookbook';
-import type { Recipe, UserPreferences } from './src/types';
+import { defaultBilling, defaultUserProfile, getBilling, getUserProfile, saveBilling, saveUserProfile } from './src/storage/account';
+import { removeRecipeFromCookbook, saveRecipeToCookbook } from './src/storage/cookbook';
+import type { BillingInfo, Recipe, UserPreferences, UserProfile } from './src/types';
 
 export default function App() {
   const [preferences, setPreferencesState] = useState<UserPreferences | null>(null);
+  const [userProfile, setUserProfileState] = useState<UserProfile | null>(null);
+  const [billing, setBillingState] = useState<BillingInfo | null>(null);
 
   useEffect(() => {
-    getPreferences().then(setPreferencesState);
+    Promise.all([getPreferences(), getUserProfile(), getBilling()]).then(([prefs, profile, billingData]) => {
+      setPreferencesState(prefs);
+      setUserProfileState(profile);
+      setBillingState(billingData);
+    });
   }, []);
 
   const setPreferences = (next: UserPreferences) => {
@@ -19,20 +26,39 @@ export default function App() {
     void savePreferences(next);
   };
 
+  const setUserProfile = (next: UserProfile) => {
+    setUserProfileState(next);
+    void saveUserProfile(next);
+  };
+
+  const setBilling = (next: BillingInfo) => {
+    setBillingState(next);
+    void saveBilling(next);
+  };
+
   const saveRecipe = async (recipe: Recipe) => {
-    await saveRecipeToCookbook(recipe);
+    return saveRecipeToCookbook(recipe);
+  };
+
+  const removeRecipe = async (recipeId: string) => {
+    await removeRecipeFromCookbook(recipeId);
   };
 
   const value = useMemo(
     () => ({
       preferences: preferences ?? defaultPreferences,
       setPreferences,
+      userProfile: userProfile ?? defaultUserProfile,
+      setUserProfile,
+      billing: billing ?? defaultBilling,
+      setBilling,
       saveRecipe,
+      removeRecipe,
     }),
-    [preferences],
+    [preferences, userProfile, billing],
   );
 
-  if (!preferences) {
+  if (!preferences || !userProfile || !billing) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator />

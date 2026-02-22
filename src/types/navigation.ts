@@ -1,10 +1,17 @@
 import type { GenerationRequest, Recipe } from './index';
 
+export type MainTabParamList = {
+  Tonight: undefined;
+  Cookbook: undefined;
+  Explore: undefined;
+  Profile: undefined;
+};
+
 export type RootStackParamList = {
   OnboardingDiet: undefined;
   OnboardingAllergies: undefined;
   OnboardingPrefs: undefined;
-  Home: undefined;
+  MainTabs: undefined;
   Results: { recipes: Recipe[]; requestId: string; request: GenerationRequest };
   RecipeDetail: {
     recipe: Recipe;
@@ -12,5 +19,8 @@ export type RootStackParamList = {
     request: GenerationRequest;
     listIndex?: number;
   };
-  Cookbook: undefined;
+  Account: undefined;
+  FoodPreferences: undefined;
+  Billing: undefined;
+  Support: undefined;
 };

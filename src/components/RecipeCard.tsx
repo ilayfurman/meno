@@ -1,53 +1,215 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { colors } from '../constants/theme';
+import type { GestureResponderEvent } from 'react-native';
 import type { Recipe } from '../types';
+import { colors } from '../theme/colors';
+import { Chip } from './Chip';
 
 interface RecipeCardProps {
   recipe: Recipe;
   onPress: () => void;
+  onLongPress?: () => void;
+  onSave?: () => void;
+  onShare?: () => void;
+  onRemove?: () => void;
+  compact?: boolean;
+  selected?: boolean;
+  modeStyle?: 'browse' | 'select' | 'reorder';
+  showReorderDeleteX?: boolean;
+  onReorderDelete?: () => void;
 }
 
-export function RecipeCard({ recipe, onPress }: RecipeCardProps) {
+export function RecipeCard({
+  recipe,
+  onPress,
+  onLongPress,
+  onSave,
+  onShare,
+  onRemove,
+  compact = false,
+  selected = false,
+  modeStyle = 'browse',
+  showReorderDeleteX,
+  onReorderDelete,
+}: RecipeCardProps) {
+  const tags = recipe.dietary_tags.slice(0, 3);
+  const stopPress = (event: GestureResponderEvent) => {
+    event.stopPropagation();
+  };
+
   return (
-    <Pressable onPress={onPress} style={styles.card}>
-      <View style={styles.row}>
-        <Text style={styles.title}>{recipe.title}</Text>
-        <Text style={styles.meta}>{recipe.total_time_minutes}m</Text>
+    <Pressable
+      style={[
+        styles.card,
+        compact && styles.compactCard,
+        selected && styles.cardSelected,
+        modeStyle === 'reorder' && styles.reorderCard,
+      ]}
+      onPress={onPress}
+      onLongPress={onLongPress}
+      delayLongPress={180}
+    >
+      <View style={[styles.image, compact && styles.compactImage]}>
+        <Text style={styles.imageEmoji}>{compact ? '🥗' : '🍽️'}</Text>
       </View>
-      <Text style={styles.hook}>{recipe.short_hook}</Text>
-      <Text style={styles.meta}>{recipe.difficulty} | {recipe.cuisine}</Text>
+      <View style={styles.content}>
+        <Text style={styles.title} numberOfLines={2}>{recipe.title}</Text>
+        <Text style={styles.meta}>{recipe.total_time_minutes} min · {recipe.difficulty}</Text>
+        <View style={styles.tags}>
+          {tags.map((tag) => (
+            <Chip key={tag} label={tag} />
+          ))}
+        </View>
+        <Text style={styles.hook} numberOfLines={1}>{recipe.short_hook}</Text>
+      </View>
+
+      {showReorderDeleteX && onReorderDelete ? (
+        <Pressable
+          style={styles.reorderDelete}
+          onPress={(event) => {
+            stopPress(event);
+            onReorderDelete();
+          }}
+        >
+          <Text style={styles.reorderDeleteText}>×</Text>
+        </Pressable>
+      ) : null}
+
+      {onSave || onShare || onRemove ? (
+        <View style={styles.actions}>
+          {onSave ? (
+            <Pressable
+              style={styles.saveButton}
+              onPress={(event) => {
+                stopPress(event);
+                onSave();
+              }}
+            >
+              <Text style={styles.saveText}>Save</Text>
+            </Pressable>
+          ) : null}
+          {onShare ? (
+            <Pressable
+              style={styles.saveButton}
+              onPress={(event) => {
+                stopPress(event);
+                onShare();
+              }}
+            >
+              <Text style={styles.saveText}>Share</Text>
+            </Pressable>
+          ) : null}
+          {onRemove ? (
+            <Pressable
+              style={styles.saveButton}
+              onPress={(event) => {
+                stopPress(event);
+                onRemove();
+              }}
+            >
+              <Text style={styles.saveText}>Remove</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: colors.card,
+    borderRadius: 18,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 14,
-    padding: 14,
-    gap: 8,
-  },
-  row: {
+    backgroundColor: colors.surface,
+    padding: 12,
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    gap: 12,
+  },
+  compactCard: {
+    flexDirection: 'column',
+  },
+  reorderCard: {
+    paddingTop: 20,
+  },
+  cardSelected: {
+    borderColor: colors.primaryAccent,
+    backgroundColor: '#FFF7F5',
+  },
+  image: {
+    width: 96,
+    height: 96,
+    borderRadius: 14,
+    backgroundColor: '#F1E5D8',
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'center',
+  },
+  compactImage: {
+    width: '100%',
+    height: 100,
+  },
+  imageEmoji: {
+    fontSize: 36,
+  },
+  content: {
+    flex: 1,
+    gap: 7,
   },
   title: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: colors.text,
-    flex: 1,
-  },
-  hook: {
-    fontSize: 14,
-    color: colors.muted,
+    color: colors.textPrimary,
+    fontSize: 22,
+    fontWeight: '600',
+    lineHeight: 27,
   },
   meta: {
+    color: colors.textSecondary,
+    fontSize: 15,
+  },
+  tags: {
+    flexDirection: 'row',
+    gap: 6,
+    flexWrap: 'wrap',
+  },
+  hook: {
+    color: colors.textSecondary,
+    fontSize: 15,
+  },
+  saveButton: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.secondaryAccent,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  actions: {
+    alignSelf: 'flex-end',
+    flexDirection: 'row',
+    gap: 6,
+  },
+  saveText: {
+    color: colors.secondaryAccent,
+    fontWeight: '700',
     fontSize: 13,
-    color: colors.muted,
+  },
+  reorderDelete: {
+    position: 'absolute',
+    right: 8,
+    top: 8,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#F2B0A9',
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
+  },
+  reorderDeleteText: {
+    color: colors.danger,
+    fontSize: 18,
+    lineHeight: 20,
+    fontWeight: '700',
+    marginTop: -1,
   },
 });

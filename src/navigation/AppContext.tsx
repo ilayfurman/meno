@@ -1,10 +1,15 @@
 import React, { createContext, useContext } from 'react';
-import type { Recipe, UserPreferences } from '../types';
+import type { BillingInfo, Recipe, UserPreferences, UserProfile } from '../types';
 
 export interface AppContextValue {
   preferences: UserPreferences;
   setPreferences: (value: UserPreferences) => void;
-  saveRecipe: (recipe: Recipe) => Promise<void>;
+  userProfile: UserProfile;
+  setUserProfile: (value: UserProfile) => void;
+  billing: BillingInfo;
+  setBilling: (value: BillingInfo) => void;
+  saveRecipe: (recipe: Recipe) => Promise<boolean>;
+  removeRecipe: (recipeId: string) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextValue | undefined>(undefined);

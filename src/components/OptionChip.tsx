@@ -1,6 +1,5 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text } from 'react-native';
-import { colors } from '../constants/theme';
+import { Chip } from './Chip';
 
 interface OptionChipProps {
   label: string;
@@ -9,32 +8,5 @@ interface OptionChipProps {
 }
 
 export function OptionChip({ label, selected, onPress }: OptionChipProps) {
-  return (
-    <Pressable onPress={onPress} style={[styles.chip, selected && styles.selected]}>
-      <Text style={[styles.text, selected && styles.selectedText]}>{label}</Text>
-    </Pressable>
-  );
+  return <Chip label={label} selected={selected} onPress={onPress} />;
 }
-
-const styles = StyleSheet.create({
-  chip: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: '#fff',
-  },
-  selected: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primaryLight,
-  },
-  text: {
-    color: colors.text,
-    fontSize: 14,
-  },
-  selectedText: {
-    color: colors.primary,
-    fontWeight: '600',
-  },
-});

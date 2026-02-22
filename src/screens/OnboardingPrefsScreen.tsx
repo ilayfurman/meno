@@ -3,7 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { OptionChip } from '../components/OptionChip';
 import { PrimaryButton } from '../components/PrimaryButton';
-import { colors } from '../constants/theme';
+import { colors } from '../theme/colors';
 import { cuisineOptions, spiceLevelOptions, type SpiceLevel } from '../types';
 import type { RootStackParamList } from '../types/navigation';
 import { useAppContext } from '../navigation/AppContext';
@@ -25,7 +25,7 @@ export function OnboardingPrefsScreen({ navigation }: Props) {
 
   const finish = () => {
     setPreferences({ ...preferences, onboardingComplete: true });
-    navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
+    navigation.reset({ index: 0, routes: [{ name: 'MainTabs' }] });
   };
 
   return (
@@ -63,12 +63,12 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: '700',
-    color: colors.text,
+    color: colors.textPrimary,
   },
   label: {
     fontSize: 16,
     fontWeight: '600',
-    color: colors.text,
+    color: colors.textPrimary,
   },
   wrap: {
     flexDirection: 'row',

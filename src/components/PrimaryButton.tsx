@@ -1,36 +1,38 @@
 import React from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text } from 'react-native';
-import { colors } from '../constants/theme';
+import { colors } from '../theme/colors';
 
 interface PrimaryButtonProps {
   title: string;
   onPress: () => void;
-  disabled?: boolean;
   loading?: boolean;
+  disabled?: boolean;
 }
 
-export function PrimaryButton({ title, onPress, disabled, loading }: PrimaryButtonProps) {
-  const isDisabled = disabled || loading;
+export function PrimaryButton({ title, onPress, loading, disabled }: PrimaryButtonProps) {
+  const blocked = loading || disabled;
+
   return (
-    <Pressable onPress={onPress} disabled={isDisabled} style={[styles.button, isDisabled && styles.disabled]}>
-      {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.text}>{title}</Text>}
+    <Pressable onPress={onPress} disabled={blocked} style={[styles.button, blocked && styles.blocked]}>
+      {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.label}>{title}</Text>}
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   button: {
-    backgroundColor: colors.primary,
-    borderRadius: 12,
-    paddingVertical: 14,
+    borderRadius: 18,
+    backgroundColor: colors.primaryAccent,
     alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 18,
   },
-  disabled: {
-    opacity: 0.6,
+  blocked: {
+    opacity: 0.65,
   },
-  text: {
+  label: {
     color: '#fff',
-    fontSize: 16,
     fontWeight: '700',
+    fontSize: 48 / 2.2,
   },
 });

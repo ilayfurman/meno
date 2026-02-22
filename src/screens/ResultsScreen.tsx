@@ -1,25 +1,27 @@
 import React, { useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RecipeCard } from '../components/RecipeCard';
 import { PrimaryButton } from '../components/PrimaryButton';
-import { colors } from '../constants/theme';
+import { colors } from '../theme/colors';
 import { generateRecipes } from '../ai/openai';
-import type { RootStackParamList } from '../types/navigation';
 import { useAppContext } from '../navigation/AppContext';
+import type { RootStackParamList } from '../types/navigation';
+import { buildSingleRecipeShare } from '../utils/recipeShare';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Results'>;
 
 export function ResultsScreen({ route, navigation }: Props) {
   const [recipes, setRecipes] = useState(route.params.recipes);
+  const [savedIds, setSavedIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
-  const { preferences } = useAppContext();
+  const { preferences, saveRecipe } = useAppContext();
 
   const regenerate = async () => {
     try {
       setLoading(true);
-      const fresh = await generateRecipes({ preferences, request: route.params.request, count: 3 });
-      setRecipes(fresh);
+      const next = await generateRecipes({ preferences, request: route.params.request, count: 3 });
+      setRecipes(next);
     } catch (error) {
       Alert.alert('Regenerate failed', error instanceof Error ? error.message : 'Unexpected error');
     } finally {
@@ -27,14 +29,46 @@ export function ResultsScreen({ route, navigation }: Props) {
     }
   };
 
+  const shareRecipe = async (index: number) => {
+    const recipe = recipes[index];
+    try {
+      await Share.share({
+        title: recipe.title,
+        message: buildSingleRecipeShare(recipe),
+      });
+    } catch {
+      Alert.alert('Share failed', 'Could not open share sheet.');
+    }
+  };
+
+  const onSaveRecipe = async (recipeId: string) => {
+    const recipe = recipes.find((item) => item.id === recipeId);
+    if (!recipe) {
+      return;
+    }
+    const added = await saveRecipe(recipe);
+    if (added) {
+      setSavedIds((prev) => [...prev, recipeId]);
+      Alert.alert('Saved', 'Recipe added to cookbook.');
+      return;
+    }
+    setSavedIds((prev) => (prev.includes(recipeId) ? prev : [...prev, recipeId]));
+    Alert.alert('Already saved', 'This recipe is already in your cookbook.');
+  };
+
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      <Text style={styles.title}>Tonight's options</Text>
-      <View style={styles.stack}>
+      <Text style={styles.kicker}>Keep dinner simple</Text>
+      <Text style={styles.title}>Here's some ideas for tonight</Text>
+      <Text style={styles.swipeHint}>Tip: tap Save on any card to keep it in Cookbook.</Text>
+
+      <View style={styles.list}>
         {recipes.map((recipe, index) => (
           <RecipeCard
             key={`${recipe.id}-${index}`}
             recipe={recipe}
+            onSave={savedIds.includes(recipe.id) ? undefined : () => void onSaveRecipe(recipe.id)}
+            onShare={() => void shareRecipe(index)}
             onPress={() =>
               navigation.navigate('RecipeDetail', {
                 recipe,
@@ -46,7 +80,8 @@ export function ResultsScreen({ route, navigation }: Props) {
           />
         ))}
       </View>
-      <PrimaryButton title="Regenerate 3" onPress={regenerate} loading={loading} />
+
+      <PrimaryButton title="Regenerate ideas" onPress={regenerate} loading={loading} />
     </ScrollView>
   );
 }
@@ -57,15 +92,26 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   content: {
-    padding: 20,
-    gap: 14,
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 28,
+  },
+  kicker: {
+    color: colors.textSecondary,
+    fontSize: 14,
   },
   title: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: colors.text,
+    color: colors.textPrimary,
+    fontSize: 54 / 2.3,
+    lineHeight: 32,
+    fontWeight: '600',
   },
-  stack: {
+  swipeHint: {
+    color: colors.textSecondary,
+    fontSize: 14,
+  },
+  list: {
     gap: 12,
   },
 });

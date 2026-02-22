@@ -4,13 +4,13 @@ export const ingredientSchema = z.object({
   name: z.string(),
   quantity: z.string(),
   unit: z.string(),
-  notes: z.string().optional(),
+  notes: z.string().nullish(),
 });
 
 export const stepSchema = z.object({
   idx: z.number().int().min(1),
   text: z.string(),
-  timer_seconds: z.number().int().positive().optional(),
+  timer_seconds: z.number().int().positive().nullish(),
 });
 
 export const substitutionSchema = z.object({
@@ -67,9 +67,9 @@ export const recipeJsonSchema = {
                 name: { type: 'string' },
                 quantity: { type: 'string' },
                 unit: { type: 'string' },
-                notes: { type: 'string' },
+                notes: { type: ['string', 'null'] },
               },
-              required: ['name', 'quantity', 'unit'],
+              required: ['name', 'quantity', 'unit', 'notes'],
             },
           },
           steps: {
@@ -80,9 +80,9 @@ export const recipeJsonSchema = {
               properties: {
                 idx: { type: 'integer' },
                 text: { type: 'string' },
-                timer_seconds: { type: 'integer' },
+                timer_seconds: { type: ['integer', 'null'] },
               },
-              required: ['idx', 'text'],
+              required: ['idx', 'text', 'timer_seconds'],
             },
           },
           substitutions: {
