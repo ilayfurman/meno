@@ -6,5 +6,6 @@
     "skipLibCheck": true,
     "jsx": "react-jsx",
     "types": ["react", "react-native"]
-  }
+  },
+  "exclude": ["backend"]
 }

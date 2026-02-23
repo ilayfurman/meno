@@ -3,13 +3,28 @@ import {
   recipeListSchema,
   recipeSummaryJsonSchema,
   recipeSummaryListSchema,
-} from './schemas';
-import type { GenerationRequest, Recipe, RecipeSummary, UserPreferences } from '../types';
+} from "./schemas";
+import type {
+  GenerationRequest,
+  Recipe,
+  RecipeSummary,
+  UserPreferences,
+} from "../types";
+import {
+  askAgentViaBackend,
+  generateRecipesViaBackend,
+  isBackendEnabled,
+} from "../api/backend";
 
-const OPENAI_API_KEY = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env
-  ?.EXPO_PUBLIC_OPENAI_API_KEY;
-const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
-const MODEL = 'gpt-5.2';
+declare const process:
+  | {
+      env?: Record<string, string | undefined>;
+    }
+  | undefined;
+
+const OPENAI_API_KEY = process?.env?.EXPO_PUBLIC_OPENAI_API_KEY;
+const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
+const MODEL = "gpt-5.2";
 
 interface GenerateRecipesParams {
   preferences: UserPreferences;
@@ -38,7 +53,7 @@ function buildPrompt(params: GenerateRecipesParams): string {
 
   const swapBlock = swapInstruction
     ? `\nAdjustment request: ${swapInstruction}\nBase recipe to transform and improve: ${JSON.stringify(baseRecipe)}`
-    : '';
+    : "";
 
   return [
     `Create ${count} dinner recipe option(s).`,
@@ -46,38 +61,38 @@ function buildPrompt(params: GenerateRecipesParams): string {
     `Vibe: ${request.vibe}.`,
     `Difficulty: ${request.difficulty}.`,
     `Dietary restriction: ${preferences.dietaryRestriction}.`,
-    `Allergies to avoid: ${preferences.allergies.join(', ') || 'none'}.`,
-    `Preferred cuisines: ${preferences.cuisinesLiked.join(', ') || 'any'}.`,
+    `Allergies to avoid: ${preferences.allergies.join(", ") || "none"}.`,
+    `Preferred cuisines: ${preferences.cuisinesLiked.join(", ") || "any"}.`,
     `Spice level: ${preferences.spiceLevel}.`,
-    'Return practical weeknight dinners with coherent quantities and steps.',
+    "Return practical weeknight dinners with coherent quantities and steps.",
     'Set completion_state to "full".',
-    'Output numeric ingredient quantities when possible via quantity_value and quantity_unit.',
-    'For non-numeric items, set quantity_value to null and populate quantity_text.',
-    'If allergens conflict with substitutions, mention warnings clearly.',
+    "Output numeric ingredient quantities when possible via quantity_value and quantity_unit.",
+    "For non-numeric items, set quantity_value to null and populate quantity_text.",
+    "If allergens conflict with substitutions, mention warnings clearly.",
     swapBlock,
-  ].join('\n');
+  ].join("\n");
 }
 
 async function requestStructured(
-  messages: Array<{ role: 'system' | 'user'; content: string }>,
+  messages: Array<{ role: "system" | "user"; content: string }>,
   schemaName: string,
   schema: Record<string, unknown>,
 ) {
   if (!OPENAI_API_KEY) {
-    throw new Error('Missing EXPO_PUBLIC_OPENAI_API_KEY in environment.');
+    throw new Error("Missing EXPO_PUBLIC_OPENAI_API_KEY in environment.");
   }
 
   const response = await fetch(OPENAI_URL, {
-    method: 'POST',
+    method: "POST",
     headers: {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
       Authorization: `Bearer ${OPENAI_API_KEY}`,
     },
     body: JSON.stringify({
       model: MODEL,
       messages,
       response_format: {
-        type: 'json_schema',
+        type: "json_schema",
         json_schema: {
           name: schemaName,
           strict: true,
@@ -95,21 +110,23 @@ async function requestStructured(
   const body = await response.json();
   const raw = body.choices?.[0]?.message?.content;
   if (!raw) {
-    throw new Error('OpenAI response was empty.');
+    throw new Error("OpenAI response was empty.");
   }
 
   return raw as string;
 }
 
-async function requestText(messages: Array<{ role: 'system' | 'user'; content: string }>) {
+async function requestText(
+  messages: Array<{ role: "system" | "user"; content: string }>,
+) {
   if (!OPENAI_API_KEY) {
-    throw new Error('Missing EXPO_PUBLIC_OPENAI_API_KEY in environment.');
+    throw new Error("Missing EXPO_PUBLIC_OPENAI_API_KEY in environment.");
   }
 
   const response = await fetch(OPENAI_URL, {
-    method: 'POST',
+    method: "POST",
     headers: {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
       Authorization: `Bearer ${OPENAI_API_KEY}`,
     },
     body: JSON.stringify({
@@ -126,7 +143,7 @@ async function requestText(messages: Array<{ role: 'system' | 'user'; content: s
   const body = await response.json();
   const raw = body.choices?.[0]?.message?.content;
   if (!raw) {
-    throw new Error('OpenAI response was empty.');
+    throw new Error("OpenAI response was empty.");
   }
   return raw as string;
 }
@@ -134,11 +151,11 @@ async function requestText(messages: Array<{ role: 'system' | 'user'; content: s
 function normalizeRecipe(recipe: Recipe): Recipe {
   return {
     ...recipe,
-    completion_state: 'full',
+    completion_state: "full",
     ingredients: recipe.ingredients.map((ingredient) => ({
       ...ingredient,
-      quantity: ingredient.quantity ?? ingredient.quantity_text ?? '',
-      unit: ingredient.unit ?? ingredient.quantity_unit ?? '',
+      quantity: ingredient.quantity ?? ingredient.quantity_text ?? "",
+      unit: ingredient.unit ?? ingredient.quantity_unit ?? "",
       quantity_value: ingredient.quantity_value ?? null,
       quantity_unit: ingredient.quantity_unit ?? ingredient.unit ?? null,
       quantity_text: ingredient.quantity_text ?? ingredient.quantity ?? null,
@@ -146,28 +163,35 @@ function normalizeRecipe(recipe: Recipe): Recipe {
   };
 }
 
-export async function generateRecipeSummaries(params: GenerateSummaryParams): Promise<RecipeSummary[]> {
+export async function generateRecipeSummaries(
+  params: GenerateSummaryParams,
+): Promise<RecipeSummary[]> {
   const userPrompt = [
     `Create ${params.count} dinner idea summaries.`,
     `Time target: ${params.request.time} minutes max.`,
     `Vibe: ${params.request.vibe}.`,
     `Difficulty: ${params.request.difficulty}.`,
     `Dietary restriction: ${params.preferences.dietaryRestriction}.`,
-    `Allergies to avoid: ${params.preferences.allergies.join(', ') || 'none'}.`,
-    `Preferred cuisines: ${params.preferences.cuisinesLiked.join(', ') || 'any'}.`,
+    `Allergies to avoid: ${params.preferences.allergies.join(", ") || "none"}.`,
+    `Preferred cuisines: ${params.preferences.cuisinesLiked.join(", ") || "any"}.`,
     `Spice level: ${params.preferences.spiceLevel}.`,
-    'Return summary cards only (no ingredients, no steps).',
-  ].join('\n');
+    "Return summary cards only (no ingredients, no steps).",
+  ].join("\n");
 
-  const baseMessages: Array<{ role: 'system' | 'user'; content: string }> = [
+  const baseMessages: Array<{ role: "system" | "user"; content: string }> = [
     {
-      role: 'system',
-      content: 'You are a strict recipe ideation generator. Return only valid JSON matching schema. No markdown.',
+      role: "system",
+      content:
+        "You are a strict recipe ideation generator. Return only valid JSON matching schema. No markdown.",
     },
-    { role: 'user', content: userPrompt },
+    { role: "user", content: userPrompt },
   ];
 
-  const firstRaw = await requestStructured(baseMessages, 'recipe_summaries', recipeSummaryJsonSchema);
+  const firstRaw = await requestStructured(
+    baseMessages,
+    "recipe_summaries",
+    recipeSummaryJsonSchema,
+  );
 
   try {
     return recipeSummaryListSchema.parse(JSON.parse(firstRaw)).recipes;
@@ -176,48 +200,55 @@ export async function generateRecipeSummaries(params: GenerateSummaryParams): Pr
       [
         ...baseMessages,
         {
-          role: 'user',
-          content: 'Fix JSON: output strictly valid schema-compliant JSON only.',
+          role: "user",
+          content:
+            "Fix JSON: output strictly valid schema-compliant JSON only.",
         },
       ],
-      'recipe_summaries_fix',
+      "recipe_summaries_fix",
       recipeSummaryJsonSchema,
     );
     return recipeSummaryListSchema.parse(JSON.parse(secondRaw)).recipes;
   }
 }
 
-export async function generateFullRecipeFromSummary(params: GenerateFullRecipeParams): Promise<Recipe> {
+export async function generateFullRecipeFromSummary(
+  params: GenerateFullRecipeParams,
+): Promise<Recipe> {
   const swapBlock = params.swapInstruction
     ? `\nAdjustment request: ${params.swapInstruction}\nBase recipe to transform and improve: ${JSON.stringify(params.baseRecipe)}`
-    : '';
+    : "";
 
   const userPrompt = [
-    'Generate exactly 1 full recipe from this summary idea.',
+    "Generate exactly 1 full recipe from this summary idea.",
     `Summary: ${JSON.stringify(params.summary)}`,
     `Time target: ${params.request.time} minutes max.`,
     `Vibe: ${params.request.vibe}.`,
     `Difficulty: ${params.request.difficulty}.`,
     `Dietary restriction: ${params.preferences.dietaryRestriction}.`,
-    `Allergies to avoid: ${params.preferences.allergies.join(', ') || 'none'}.`,
-    `Preferred cuisines: ${params.preferences.cuisinesLiked.join(', ') || 'any'}.`,
+    `Allergies to avoid: ${params.preferences.allergies.join(", ") || "none"}.`,
+    `Preferred cuisines: ${params.preferences.cuisinesLiked.join(", ") || "any"}.`,
     `Spice level: ${params.preferences.spiceLevel}.`,
-    'Output numeric ingredient quantities when possible via quantity_value and quantity_unit.',
+    "Output numeric ingredient quantities when possible via quantity_value and quantity_unit.",
     'For non-numeric items like "to taste", set quantity_value to null and fill quantity_text.',
     'Set completion_state to "full".',
     swapBlock,
-  ].join('\n');
+  ].join("\n");
 
-  const baseMessages: Array<{ role: 'system' | 'user'; content: string }> = [
+  const baseMessages: Array<{ role: "system" | "user"; content: string }> = [
     {
-      role: 'system',
+      role: "system",
       content:
-        'You are a strict recipe generator. Return only valid JSON matching schema. No markdown. No prose.',
+        "You are a strict recipe generator. Return only valid JSON matching schema. No markdown. No prose.",
     },
-    { role: 'user', content: userPrompt },
+    { role: "user", content: userPrompt },
   ];
 
-  const firstRaw = await requestStructured(baseMessages, 'recipe_full', recipeJsonSchema);
+  const firstRaw = await requestStructured(
+    baseMessages,
+    "recipe_full",
+    recipeJsonSchema,
+  );
   try {
     const parsed = recipeListSchema.parse(JSON.parse(firstRaw)).recipes[0];
     return normalizeRecipe(parsed);
@@ -226,11 +257,12 @@ export async function generateFullRecipeFromSummary(params: GenerateFullRecipePa
       [
         ...baseMessages,
         {
-          role: 'user',
-          content: 'Fix JSON: output strictly valid schema-compliant JSON only.',
+          role: "user",
+          content:
+            "Fix JSON: output strictly valid schema-compliant JSON only.",
         },
       ],
-      'recipe_full_fix',
+      "recipe_full_fix",
       recipeJsonSchema,
     );
     const parsed = recipeListSchema.parse(JSON.parse(secondRaw)).recipes[0];
@@ -238,43 +270,70 @@ export async function generateFullRecipeFromSummary(params: GenerateFullRecipePa
   }
 }
 
-export async function generateRecipes(params: GenerateRecipesParams): Promise<Recipe[]> {
+export async function generateRecipes(
+  params: GenerateRecipesParams,
+): Promise<Recipe[]> {
+  if (isBackendEnabled()) {
+    return generateRecipesViaBackend({
+      request: params.request,
+      preferences: params.preferences,
+      count: params.count,
+      swapInstruction: params.swapInstruction,
+      baseRecipe: params.baseRecipe,
+    });
+  }
+
   const userPrompt = buildPrompt(params);
-  const baseMessages: Array<{ role: 'system' | 'user'; content: string }> = [
+  const baseMessages: Array<{ role: "system" | "user"; content: string }> = [
     {
-      role: 'system',
+      role: "system",
       content:
-        'You are a strict recipe generator. Return only valid JSON matching the schema. No markdown. No prose.',
+        "You are a strict recipe generator. Return only valid JSON matching the schema. No markdown. No prose.",
     },
-    { role: 'user', content: userPrompt },
+    { role: "user", content: userPrompt },
   ];
 
-  const firstRaw = await requestStructured(baseMessages, 'recipe_response', recipeJsonSchema);
+  const firstRaw = await requestStructured(
+    baseMessages,
+    "recipe_response",
+    recipeJsonSchema,
+  );
   try {
-    return recipeListSchema.parse(JSON.parse(firstRaw)).recipes.map(normalizeRecipe);
+    return recipeListSchema
+      .parse(JSON.parse(firstRaw))
+      .recipes.map(normalizeRecipe);
   } catch {
     const secondRaw = await requestStructured(
       [
         ...baseMessages,
         {
-          role: 'user',
+          role: "user",
           content:
-            'Fix JSON: return the same answer but strictly valid JSON matching schema. Output only JSON.',
+            "Fix JSON: return the same answer but strictly valid JSON matching schema. Output only JSON.",
         },
       ],
-      'recipe_response_fix',
+      "recipe_response_fix",
       recipeJsonSchema,
     );
-    return recipeListSchema.parse(JSON.parse(secondRaw)).recipes.map(normalizeRecipe);
+    return recipeListSchema
+      .parse(JSON.parse(secondRaw))
+      .recipes.map(normalizeRecipe);
   }
 }
 
-export async function askAboutRecipes(question: string, recipes: Recipe[]): Promise<string> {
+export async function askAboutRecipes(
+  question: string,
+  recipes: Recipe[],
+): Promise<string> {
   if (!question.trim()) {
-    throw new Error('Question is required.');
+    throw new Error("Question is required.");
   }
   if (!recipes.length) {
-    throw new Error('Select at least one recipe.');
+    throw new Error("Select at least one recipe.");
+  }
+
+  if (isBackendEnabled()) {
+    return askAgentViaBackend(question, recipes);
   }
 
   const recipeSummary = recipes.map((recipe) => ({
@@ -291,12 +350,12 @@ export async function askAboutRecipes(question: string, recipes: Recipe[]): Prom
 
   return requestText([
     {
-      role: 'system',
+      role: "system",
       content:
-        'You are Meno assistant. Answer cookbook questions clearly and concisely with practical cooking guidance.',
+        "You are Meno assistant. Answer cookbook questions clearly and concisely with practical cooking guidance.",
     },
     {
-      role: 'user',
+      role: "user",
       content: `Question: ${question}\n\nSelected recipes:\n${JSON.stringify(recipeSummary)}`,
     },
   ]);

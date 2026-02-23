@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { AccordionSection } from '../components/AccordionSection';
@@ -17,6 +17,7 @@ import { buildSingleRecipeShare } from '../utils/recipeShare';
 import { getDisplayIngredients, type UnitSystem } from '../utils/ingredients';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'RecipeDetail'>;
+const ENABLE_ADVANCED_YIELD_CONTROLS = false;
 
 export function RecipeDetailScreen({ route }: Props) {
   const [recipe, setRecipe] = useState<Recipe>(route.params.recipe);
@@ -29,15 +30,19 @@ export function RecipeDetailScreen({ route }: Props) {
   const [unitSystem, setUnitSystem] = useState<UnitSystem>('original');
   const { preferences, saveRecipe, saveRecipeRevision, removeRecipe, getRecipeForRun, hydrateRun } = useAppContext();
   const [isHydratingDetail, setIsHydratingDetail] = useState(route.params.recipe.completion_state === 'summary');
+  const hydrationRequestedForRun = useRef<string | null>(null);
 
   const summaryRecipeId = route.params.sourceRecipeId ?? route.params.recipe.id;
   const runId = route.params.runId;
 
+  const activeTargetServings = ENABLE_ADVANCED_YIELD_CONTROLS ? targetServings : recipe.servings;
+  const activeUnitSystem: UnitSystem = ENABLE_ADVANCED_YIELD_CONTROLS ? unitSystem : 'original';
+
   const displayedIngredients = getDisplayIngredients({
     ingredients: recipe.ingredients,
     baseServings: recipe.servings,
-    targetServings,
-    unitSystem,
+    targetServings: activeTargetServings,
+    unitSystem: activeUnitSystem,
   });
 
   useEffect(() => {
@@ -64,10 +69,16 @@ export function RecipeDetailScreen({ route }: Props) {
     if (maybeRecipe) {
       setRecipe(maybeRecipe);
       setIsHydratingDetail(false);
+      hydrationRequestedForRun.current = null;
       return;
     }
-    setIsHydratingDetail(true);
-    void hydrateRun(runId);
+    if (!isHydratingDetail) {
+      setIsHydratingDetail(true);
+    }
+    if (hydrationRequestedForRun.current !== runId) {
+      hydrationRequestedForRun.current = runId;
+      void hydrateRun(runId);
+    }
   }, [runId, summaryRecipeId, getRecipeForRun, hydrateRun]);
 
   const regenerateSingle = async (instruction?: string) => {
@@ -104,15 +115,20 @@ export function RecipeDetailScreen({ route }: Props) {
   };
 
   const onSave = async () => {
-    const added = await saveRecipe(recipe);
-    if (added) {
-      setSaved(true);
-      setBaseRecipeId(recipe.id);
-      Alert.alert('Saved', 'Recipe added to cookbook.');
-      return;
-    }
+    const wasSaved = saved;
     setSaved(true);
-    Alert.alert('Already saved', 'This recipe is already in your cookbook.');
+    try {
+      const added = await saveRecipe(recipe);
+      if (added) {
+        setBaseRecipeId(recipe.id);
+        Alert.alert('Saved', 'Recipe added to cookbook.');
+        return;
+      }
+      Alert.alert('Already saved', 'This recipe is already in your cookbook.');
+    } catch (error) {
+      setSaved(wasSaved);
+      Alert.alert('Save failed', error instanceof Error ? error.message : 'Could not save recipe.');
+    }
   };
 
   const onRemove = () => {
@@ -122,10 +138,15 @@ export function RecipeDetailScreen({ route }: Props) {
         text: 'Remove',
         style: 'destructive',
         onPress: () => {
-          void removeRecipe(recipe.id).then(() => {
-            setSaved(false);
-            Alert.alert('Removed', 'Recipe removed from cookbook.');
-          });
+          setSaved(false);
+          void removeRecipe(recipe.id)
+            .then(() => {
+              Alert.alert('Removed', 'Recipe removed from cookbook.');
+            })
+            .catch((error) => {
+              setSaved(true);
+              Alert.alert('Remove failed', error instanceof Error ? error.message : 'Could not remove recipe.');
+            });
         },
       },
     ]);
@@ -160,31 +181,35 @@ export function RecipeDetailScreen({ route }: Props) {
         <View style={styles.metaRow}>
           <Chip label={`${recipe.total_time_minutes} min`} selected />
           <Chip label={recipe.difficulty} selected />
-          <Chip label={`Serves ${targetServings}`} selected />
+          <Chip label={`Serves ${activeTargetServings}`} selected />
           {recipe.version_number ? <Chip label={`v${recipe.version_number}`} selected /> : null}
         </View>
 
-        <View style={styles.adjustRow}>
-          <Text style={styles.adjustLabel}>Yield</Text>
-          <View style={styles.yieldControls}>
-            <Pressable
-              style={styles.yieldButton}
-              onPress={() => setTargetServings((prev) => Math.max(1, prev - 1))}
-            >
-              <Text style={styles.yieldButtonText}>-</Text>
-            </Pressable>
-            <Text style={styles.yieldValue}>{targetServings}</Text>
-            <Pressable style={styles.yieldButton} onPress={() => setTargetServings((prev) => prev + 1)}>
-              <Text style={styles.yieldButtonText}>+</Text>
-            </Pressable>
+        {ENABLE_ADVANCED_YIELD_CONTROLS ? (
+          <View style={styles.adjustRow}>
+            <Text style={styles.adjustLabel}>Yield</Text>
+            <View style={styles.yieldControls}>
+              <Pressable
+                style={styles.yieldButton}
+                onPress={() => setTargetServings((prev) => Math.max(1, prev - 1))}
+              >
+                <Text style={styles.yieldButtonText}>-</Text>
+              </Pressable>
+              <Text style={styles.yieldValue}>{targetServings}</Text>
+              <Pressable style={styles.yieldButton} onPress={() => setTargetServings((prev) => prev + 1)}>
+                <Text style={styles.yieldButtonText}>+</Text>
+              </Pressable>
+            </View>
           </View>
-        </View>
+        ) : null}
 
-        <View style={styles.metaRow}>
-          <Chip label="Original" selected={unitSystem === 'original'} onPress={() => setUnitSystem('original')} />
-          <Chip label="Metric" selected={unitSystem === 'metric'} onPress={() => setUnitSystem('metric')} />
-          <Chip label="US" selected={unitSystem === 'us'} onPress={() => setUnitSystem('us')} />
-        </View>
+        {ENABLE_ADVANCED_YIELD_CONTROLS ? (
+          <View style={styles.metaRow}>
+            <Chip label="Original" selected={unitSystem === 'original'} onPress={() => setUnitSystem('original')} />
+            <Chip label="Metric" selected={unitSystem === 'metric'} onPress={() => setUnitSystem('metric')} />
+            <Chip label="US" selected={unitSystem === 'us'} onPress={() => setUnitSystem('us')} />
+          </View>
+        ) : null}
 
         <AccordionSection title="Ingredients" initiallyOpen>
           {isHydratingDetail ? (
@@ -222,20 +247,22 @@ export function RecipeDetailScreen({ route }: Props) {
             >
               <Text style={styles.adjustButtonText}>Generate adjustment</Text>
             </Pressable>
-            <Pressable
-              style={[
-                styles.adjustButtonSecondary,
-                (loading || isHydratingDetail || targetServings === recipe.servings) && styles.adjustButtonDisabled,
-              ]}
-              onPress={() =>
-                void regenerateSingle(
-                  `Rebalance ingredient amounts and steps for ${targetServings} servings. ${adjustInput.trim()}`.trim(),
-                )
-              }
-              disabled={loading || isHydratingDetail || targetServings === recipe.servings}
-            >
-              <Text style={styles.adjustButtonSecondaryText}>Rebalance for yield</Text>
-            </Pressable>
+            {ENABLE_ADVANCED_YIELD_CONTROLS ? (
+              <Pressable
+                style={[
+                  styles.adjustButtonSecondary,
+                  (loading || isHydratingDetail || targetServings === recipe.servings) && styles.adjustButtonDisabled,
+                ]}
+                onPress={() =>
+                  void regenerateSingle(
+                    `Rebalance ingredient amounts and steps for ${targetServings} servings. ${adjustInput.trim()}`.trim(),
+                  )
+                }
+                disabled={loading || isHydratingDetail || targetServings === recipe.servings}
+              >
+                <Text style={styles.adjustButtonSecondaryText}>Rebalance for yield</Text>
+              </Pressable>
+            ) : null}
             {saved && hasAdjustmentDraft ? (
               <>
                 <Pressable style={styles.adjustButtonSecondary} onPress={() => void onSaveAsVersion(false)}>

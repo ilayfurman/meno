@@ -5,8 +5,14 @@ import { AppNavigator } from './src/navigation/AppNavigator';
 import { AppContextProvider } from './src/navigation/AppContext';
 import { defaultPreferences, getPreferences, savePreferences } from './src/storage/preferences';
 import { defaultBilling, defaultUserProfile, getBilling, getUserProfile, saveBilling, saveUserProfile } from './src/storage/account';
-import { removeRecipeFromCookbook, saveRecipeRevision as saveRecipeRevisionToCookbook, saveRecipeToCookbook } from './src/storage/cookbook';
+import {
+  flushCookbookOutbox,
+  removeRecipeFromCookbook,
+  saveRecipeRevision as saveRecipeRevisionToCookbook,
+  saveRecipeToCookbook,
+} from './src/storage/cookbook';
 import { generateFullRecipeFromSummary, generateRecipeSummaries } from './src/ai/openai';
+import { generateRecipeSummariesViaBackend, hydrateRecipeViaBackend, isBackendEnabled } from './src/api/backend';
 import type { BillingInfo, GeneratedRecipeRun, GenerationRequest, Recipe, UserPreferences, UserProfile } from './src/types';
 
 export default function App() {
@@ -14,7 +20,9 @@ export default function App() {
   const [userProfile, setUserProfileState] = useState<UserProfile | null>(null);
   const [billing, setBillingState] = useState<BillingInfo | null>(null);
   const [generatedRuns, setGeneratedRuns] = useState<GeneratedRecipeRun[]>([]);
+  const [isGenerating, setIsGenerating] = useState(false);
   const hydrationTokensRef = React.useRef<Record<string, symbol>>({});
+  const generationAbortRef = React.useRef<AbortController | null>(null);
   const fullRecipeCacheRef = React.useRef<Record<string, Recipe>>({});
   const preferencesRef = React.useRef<UserPreferences | null>(null);
   const runsRef = React.useRef<GeneratedRecipeRun[]>([]);
@@ -25,6 +33,7 @@ export default function App() {
       setPreferencesState(prefs);
       setUserProfileState(profile);
       setBillingState(billingData);
+      void flushCookbookOutbox();
     });
   }, []);
 
@@ -50,6 +59,12 @@ export default function App() {
 
   const removeRecipe = async (recipeId: string) => {
     await removeRecipeFromCookbook(recipeId);
+  };
+
+  const cancelActiveGeneration = () => {
+    generationAbortRef.current?.abort();
+    generationAbortRef.current = null;
+    setIsGenerating(false);
   };
 
   const saveRecipeRevision = async (params: {
@@ -158,11 +173,17 @@ export default function App() {
         }
 
         try {
-          const fullRecipe = await generateFullRecipeFromSummary({
-            preferences: prefs,
-            request: targetRun.request,
-            summary,
-          });
+          const fullRecipe = isBackendEnabled()
+            ? await hydrateRecipeViaBackend({
+                preferences: prefs,
+                request: targetRun.request,
+                summary,
+              })
+            : await generateFullRecipeFromSummary({
+                preferences: prefs,
+                request: targetRun.request,
+                summary,
+              });
           const normalized = {
             ...fullRecipe,
             id: recipeId,
@@ -186,38 +207,88 @@ export default function App() {
       throw new Error('Preferences are not loaded yet.');
     }
 
-    const summaries = await generateRecipeSummaries({
-      preferences: prefs,
-      request,
-      count: 3,
-    });
+    setIsGenerating(true);
+    try {
+      if (isBackendEnabled()) {
+        const controller = new AbortController();
+        generationAbortRef.current = controller;
 
-    const now = Date.now();
-    const runId = `${now}`;
-    const requestHash = JSON.stringify({
-      request,
-      dietaryRestriction: prefs.dietaryRestriction,
-      allergies: prefs.allergies,
-      cuisinesLiked: prefs.cuisinesLiked,
-      spiceLevel: prefs.spiceLevel,
-    });
-    const statusById = Object.fromEntries(summaries.map((summary) => [summary.id, 'pending'])) as GeneratedRecipeRun['statusById'];
+        const summaries = await generateRecipeSummariesViaBackend(
+          {
+            request,
+            preferences: prefs,
+            count: 3,
+          },
+          { signal: controller.signal },
+        );
+        generationAbortRef.current = null;
+        if (!Array.isArray(summaries) || summaries.length === 0) {
+          throw new Error('No recipe ideas were returned. Please try again.');
+        }
+        const now = Date.now();
+        const runId = `${now}`;
+        const requestHash = JSON.stringify({
+          request,
+          dietaryRestriction: prefs.dietaryRestriction,
+          allergies: prefs.allergies,
+          cuisinesLiked: prefs.cuisinesLiked,
+          spiceLevel: prefs.spiceLevel,
+        });
+        const statusById = Object.fromEntries(summaries.map((summary) => [summary.id, 'pending'])) as GeneratedRecipeRun['statusById'];
+        const run: GeneratedRecipeRun = {
+          id: runId,
+          createdAt: now,
+          request,
+          requestHash,
+          summaries,
+          recipesById: {},
+          statusById,
+          errorsById: {},
+          stage: 'summaries_ready',
+        };
+        pendingRunMapRef.current[runId] = run;
+        addGeneratedRun(run);
+        return runId;
+      }
 
-    const run: GeneratedRecipeRun = {
-      id: runId,
-      createdAt: now,
-      request,
-      requestHash,
-      summaries,
-      recipesById: {},
-      statusById,
-      errorsById: {},
-      stage: 'summaries_ready',
-    };
+      const summaries = await generateRecipeSummaries({
+        preferences: prefs,
+        request,
+        count: 3,
+      });
+      if (!Array.isArray(summaries) || summaries.length === 0) {
+        throw new Error('No recipe ideas were returned. Please try again.');
+      }
 
-    pendingRunMapRef.current[runId] = run;
-    addGeneratedRun(run);
-    return runId;
+      const now = Date.now();
+      const runId = `${now}`;
+      const requestHash = JSON.stringify({
+        request,
+        dietaryRestriction: prefs.dietaryRestriction,
+        allergies: prefs.allergies,
+        cuisinesLiked: prefs.cuisinesLiked,
+        spiceLevel: prefs.spiceLevel,
+      });
+      const statusById = Object.fromEntries(summaries.map((summary) => [summary.id, 'pending'])) as GeneratedRecipeRun['statusById'];
+
+      const run: GeneratedRecipeRun = {
+        id: runId,
+        createdAt: now,
+        request,
+        requestHash,
+        summaries,
+        recipesById: {},
+        statusById,
+        errorsById: {},
+        stage: 'summaries_ready',
+      };
+
+      pendingRunMapRef.current[runId] = run;
+      addGeneratedRun(run);
+      return runId;
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const getRecipeForRun = (runId: string, recipeId: string): Recipe | null => {
@@ -266,8 +337,10 @@ export default function App() {
       billing: billing ?? defaultBilling,
       setBilling,
       generatedRuns,
+      isGenerating,
       addGeneratedRun,
       startGenerationRun,
+      cancelActiveGeneration,
       hydrateRun,
       cancelRunHydration,
       getRecipeForRun,
@@ -279,7 +352,7 @@ export default function App() {
       saveRecipeRevision,
       removeRecipe,
     }),
-    [preferences, userProfile, billing, generatedRuns],
+    [preferences, userProfile, billing, generatedRuns, isGenerating],
   );
 
   if (!preferences || !userProfile || !billing) {

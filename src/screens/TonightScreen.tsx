@@ -13,6 +13,7 @@ import { difficultyOptions, timeOptions, type DifficultyOption, type Recipe, typ
 import { useAppContext } from '../navigation/AppContext';
 import type { RootStackParamList } from '../types/navigation';
 import { buildSingleRecipeShare } from '../utils/recipeShare';
+import { isBackendEnabled } from '../api/backend';
 
 const timeChoices = [...timeOptions, 60] as const;
 const dietaryChips = ['GF', 'Vegetarian', 'Vegan', 'Dairy Free', 'Nut Free', 'Kosher'];
@@ -30,12 +31,14 @@ export function TonightScreen() {
   const [time, setTime] = useState<TimeOption | 60>(30);
   const [vibe, setVibe] = useState<VibeOption>('comfort');
   const [difficulty, setDifficulty] = useState<DifficultyOption>('easy');
-  const [loading, setLoading] = useState(false);
   const [savedIds, setSavedIds] = useState<string[]>([]);
+  const [lastRunError, setLastRunError] = useState<string | null>(null);
   const {
     preferences,
+    isGenerating,
     generatedRuns,
     startGenerationRun,
+    cancelActiveGeneration,
     hydrateRun,
     getRecipeForRun,
     removeGeneratedRun,
@@ -52,16 +55,15 @@ export function TonightScreen() {
   }, [preferences.dietaryRestriction]);
 
   const onGenerate = async () => {
+    setLastRunError(null);
     try {
-      setLoading(true);
       const request = { time: time === 60 ? 45 : time, vibe, difficulty };
       const runId = await startGenerationRun(request);
       void hydrateRun(runId);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unexpected error';
+      setLastRunError(message);
       Alert.alert('Generation failed', message.includes('insufficient_quota') ? 'OpenAI billing/quota is unavailable for this key.' : message);
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -73,14 +75,18 @@ export function TonightScreen() {
       Alert.alert('Recipe still loading', 'Please wait until this recipe is fully generated.');
       return;
     }
-    const added = await saveRecipe(recipe);
-    if (added) {
+
+    if (!savedIds.includes(recipeId)) {
       setSavedIds((prev) => [...prev, recipeId]);
-      Alert.alert('Saved', 'Recipe added to cookbook.');
-      return;
     }
-    setSavedIds((prev) => (prev.includes(recipeId) ? prev : [...prev, recipeId]));
-    Alert.alert('Already saved', 'This recipe is already in your cookbook.');
+
+    try {
+      const added = await saveRecipe(recipe);
+      Alert.alert(added ? 'Saved' : 'Already saved', added ? 'Recipe added to cookbook.' : 'This recipe is already in your cookbook.');
+    } catch (error) {
+      setSavedIds((prev) => prev.filter((id) => id !== recipeId));
+      Alert.alert('Save failed', error instanceof Error ? error.message : 'Could not save recipe.');
+    }
   };
 
   const onShareRecipe = async (recipeId: string) => {
@@ -146,7 +152,14 @@ export function TonightScreen() {
         <SegmentedControl options={difficultyOptions} selected={difficulty} onChange={setDifficulty} tone="sage" />
       </View>
 
-      <PrimaryButton title="Show me 3 ideas" onPress={onGenerate} loading={loading} />
+      <PrimaryButton title="Show me 3 ideas" onPress={onGenerate} loading={isGenerating} disabled={isGenerating} />
+      {isGenerating ? (
+        <Pressable style={styles.stopButton} onPress={cancelActiveGeneration}>
+          <Text style={styles.stopButtonText}>Stop run</Text>
+        </Pressable>
+      ) : null}
+      {__DEV__ ? <Text style={styles.debugInfo}>Mode: {isBackendEnabled() ? 'backend' : 'client'}</Text> : null}
+      {lastRunError ? <Text style={styles.errorHint}>Last error: {lastRunError}</Text> : null}
 
       {generatedRuns.map((run, runIndex) => (
         <View key={run.id} style={styles.runSection}>
@@ -243,6 +256,28 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
+  },
+  stopButton: {
+    alignSelf: 'center',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.primaryAccent,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  stopButtonText: {
+    color: colors.primaryAccent,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  debugInfo: {
+    color: colors.textSecondary,
+    fontSize: 12,
+  },
+  errorHint: {
+    color: colors.primaryAccent,
+    fontSize: 12,
   },
   runSection: {
     gap: 8,

@@ -8,7 +8,9 @@
     "ios": "expo start --ios",
     "android": "expo start --android",
     "web": "expo start --web",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "backend:dev": "npm --prefix backend run dev",
+    "backend:typecheck": "npm --prefix backend run typecheck"
   },
   "dependencies": {
     "@babel/core": "^7.26.0",

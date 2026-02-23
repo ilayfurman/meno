@@ -1,12 +1,15 @@
 import React, { useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { colors } from '../theme/colors';
 import { useAppContext } from '../navigation/AppContext';
 import { clearCookbook } from '../storage/cookbook';
 import { defaultPreferences } from '../storage/preferences';
-import type { RootStackParamList } from '../types/navigation';
+import { AccountScreen } from './AccountScreen';
+import { FoodPreferencesScreen } from './FoodPreferencesScreen';
+import { BillingScreen } from './BillingScreen';
+import { SupportScreen } from './SupportScreen';
+
+type ProfileSubscreen = 'root' | 'account' | 'food' | 'billing' | 'support';
 
 function SettingsRow({ label, subtitle, onPress }: { label: string; subtitle: string; onPress: () => void }) {
   return (
@@ -21,8 +24,8 @@ function SettingsRow({ label, subtitle, onPress }: { label: string; subtitle: st
 }
 
 export function ProfileScreen() {
-  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [dangerOpen, setDangerOpen] = useState(false);
+  const [subscreen, setSubscreen] = useState<ProfileSubscreen>('root');
   const { setPreferences, userProfile, billing } = useAppContext();
 
   const resetPreferences = () => {
@@ -44,15 +47,32 @@ export function ProfileScreen() {
     ]);
   };
 
+  if (subscreen !== 'root') {
+    return (
+      <View style={styles.screen}>
+        <Pressable style={styles.backRow} onPress={() => setSubscreen('root')}>
+          <Text style={styles.backText}>‹ Back to Profile</Text>
+        </Pressable>
+
+        <View style={styles.subscreenWrap}>
+          {subscreen === 'account' ? <AccountScreen /> : null}
+          {subscreen === 'food' ? <FoodPreferencesScreen /> : null}
+          {subscreen === 'billing' ? <BillingScreen /> : null}
+          {subscreen === 'support' ? <SupportScreen /> : null}
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.screen}>
       <Text style={styles.title}>Profile</Text>
 
       <View style={styles.section}>
-        <SettingsRow label="Account" subtitle={`${userProfile.name} · ${userProfile.email}`} onPress={() => navigation.navigate('Account')} />
-        <SettingsRow label="Food Preferences" subtitle="Dietary, allergies, cuisine, spice" onPress={() => navigation.navigate('FoodPreferences')} />
-        <SettingsRow label="Billing & Plan" subtitle={`Current plan: ${billing.plan}`} onPress={() => navigation.navigate('Billing')} />
-        <SettingsRow label="Support" subtitle="Help, terms, privacy" onPress={() => navigation.navigate('Support')} />
+        <SettingsRow label="Account" subtitle={`${userProfile.name} · ${userProfile.email}`} onPress={() => setSubscreen('account')} />
+        <SettingsRow label="Food Preferences" subtitle="Dietary, allergies, cuisine, spice" onPress={() => setSubscreen('food')} />
+        <SettingsRow label="Billing & Plan" subtitle={`Current plan: ${billing.plan}`} onPress={() => setSubscreen('billing')} />
+        <SettingsRow label="Support" subtitle="Help, terms, privacy" onPress={() => setSubscreen('support')} />
       </View>
 
       <View style={styles.inlineActions}>
@@ -86,6 +106,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 12,
     gap: 16,
+  },
+  backRow: {
+    paddingVertical: 4,
+  },
+  backText: {
+    color: colors.primaryAccent,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  subscreenWrap: {
+    flex: 1,
+    marginHorizontal: -16,
+    marginBottom: -16,
   },
   title: {
     fontSize: 32,

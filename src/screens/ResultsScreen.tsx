@@ -14,11 +14,12 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Results'>;
 export function ResultsScreen({ route, navigation }: Props) {
   const [activeRunId, setActiveRunId] = useState(route.params.requestId);
   const [savedIds, setSavedIds] = useState<string[]>([]);
-  const [loading, setLoading] = useState(false);
   const {
+    isGenerating,
     saveRecipe,
     generatedRuns,
     startGenerationRun,
+    cancelActiveGeneration,
     hydrateRun,
     getRecipeForRun,
     removeGeneratedRun,
@@ -54,14 +55,14 @@ export function ResultsScreen({ route, navigation }: Props) {
 
   const regenerate = async () => {
     try {
-      setLoading(true);
       const nextRunId = await startGenerationRun(route.params.request);
       void hydrateRun(nextRunId);
       setActiveRunId(nextRunId);
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        return;
+      }
       Alert.alert('Regenerate failed', error instanceof Error ? error.message : 'Unexpected error');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -80,14 +81,16 @@ export function ResultsScreen({ route, navigation }: Props) {
     if (!recipe) {
       return;
     }
-    const added = await saveRecipe(recipe);
-    if (added) {
+    if (!savedIds.includes(recipe.id)) {
       setSavedIds((prev) => [...prev, recipe.id]);
-      Alert.alert('Saved', 'Recipe added to cookbook.');
-      return;
     }
-    setSavedIds((prev) => (prev.includes(recipe.id) ? prev : [...prev, recipe.id]));
-    Alert.alert('Already saved', 'This recipe is already in your cookbook.');
+    try {
+      const added = await saveRecipe(recipe);
+      Alert.alert(added ? 'Saved' : 'Already saved', added ? 'Recipe added to cookbook.' : 'This recipe is already in your cookbook.');
+    } catch (error) {
+      setSavedIds((prev) => prev.filter((id) => id !== recipe.id));
+      Alert.alert('Save failed', error instanceof Error ? error.message : 'Could not save recipe.');
+    }
   };
 
   return (
@@ -160,7 +163,12 @@ export function ResultsScreen({ route, navigation }: Props) {
         ))}
       </View>
 
-      <PrimaryButton title="Regenerate ideas" onPress={regenerate} loading={loading} />
+      <PrimaryButton title="Regenerate ideas" onPress={regenerate} loading={isGenerating} disabled={isGenerating} />
+      {isGenerating ? (
+        <Pressable style={styles.stopButton} onPress={cancelActiveGeneration}>
+          <Text style={styles.stopButtonText}>Stop run</Text>
+        </Pressable>
+      ) : null}
     </ScrollView>
   );
 }
@@ -239,5 +247,19 @@ const styles = StyleSheet.create({
   },
   cardSlide: {
     width: 310,
+  },
+  stopButton: {
+    alignSelf: 'center',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.primaryAccent,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  stopButtonText: {
+    color: colors.primaryAccent,
+    fontSize: 13,
+    fontWeight: '700',
   },
 });

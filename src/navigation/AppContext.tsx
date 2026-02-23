@@ -9,8 +9,10 @@ export interface AppContextValue {
   billing: BillingInfo;
   setBilling: (value: BillingInfo) => void;
   generatedRuns: GeneratedRecipeRun[];
+  isGenerating: boolean;
   addGeneratedRun: (run: GeneratedRecipeRun) => void; // legacy helper during migration
   startGenerationRun: (request: GenerationRequest) => Promise<string>;
+  cancelActiveGeneration: () => void;
   hydrateRun: (runId: string) => Promise<void>;
   cancelRunHydration: (runId: string) => void;
   getRecipeForRun: (runId: string, recipeId: string) => Recipe | null;

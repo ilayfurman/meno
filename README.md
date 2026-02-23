@@ -7,8 +7,9 @@ Meno is an iOS-first dinner picker: answer a few constraints and generate 3 AI d
 - Expo + React Native + TypeScript
 - React Navigation (native stack)
 - AsyncStorage for local persistence
-- OpenAI API call from client for dev only
+- OpenAI API call from client for dev only (legacy fallback)
 - Zod schema validation and retry-on-invalid-JSON
+- New backend scaffold: Fastify + Drizzle + Postgres (Neon-ready)
 
 ## Dev note
 
@@ -47,6 +48,41 @@ Alternative:
 ```bash
 npm start
 ```
+
+## Backend (new)
+
+1. Install backend dependencies:
+
+```bash
+cd backend
+npm install
+cp .env.example .env
+```
+
+2. Set backend env values (`DATABASE_URL`, `OPENAI_API_KEY`).
+
+3. Generate and run migrations:
+
+```bash
+npm run db:generate
+npm run db:migrate
+```
+
+4. Start backend:
+
+```bash
+npm run dev
+```
+
+5. Enable app -> backend routing (optional while migrating):
+
+```bash
+EXPO_PUBLIC_USE_BACKEND_GENERATION=true
+EXPO_PUBLIC_API_BASE_URL=http://<your-machine-ip>:4000
+EXPO_PUBLIC_DEV_CLERK_USER_ID=dev-local-user
+```
+
+When disabled, the app keeps using existing local/client generation behavior.
 
 ## MVP flow implemented
 

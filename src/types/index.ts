@@ -111,7 +111,7 @@ export interface RecipeSummary {
   id: string;
   title: string;
   cuisine: string;
-  servings_hint?: number;
+  servings_hint: number | null;
   total_time_minutes: number;
   difficulty: string;
   short_hook: string;
