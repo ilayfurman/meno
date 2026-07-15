@@ -10,6 +10,7 @@ import { ImportRecipeSheet } from '../components/ImportRecipeSheet';
 import { getCookbookViaBackend, setFavoriteViaBackend } from '../api/backend';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
+import { typography } from '../theme/typography';
 import type { StoredRecipe } from '../types';
 import type { CookbookFilter, CookbookSortKey } from '../types/cookbook';
 import type { RootStackParamList } from '../types/navigation';
@@ -204,17 +205,17 @@ const styles = StyleSheet.create({
     marginBottom: spacing.gridGap,
   },
   kicker: {
+    fontFamily: typography.sectionKicker.fontFamily,
     color: colors.accent,
     fontSize: 11,
-    fontWeight: '700',
     letterSpacing: 0.6,
     textTransform: 'uppercase',
     marginTop: 8,
   },
   title: {
+    fontFamily: typography.screenTitle.fontFamily,
     color: colors.foreground,
     fontSize: 28,
-    fontWeight: '800',
     letterSpacing: -0.5,
     marginTop: 4,
     marginBottom: 16,

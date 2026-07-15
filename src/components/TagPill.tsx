@@ -2,6 +2,7 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
+import { typography } from '../theme/typography';
 
 interface TagPillProps {
   label: string;
@@ -37,8 +38,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3,
   },
-  text: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
+  text: typography.tag,
 });

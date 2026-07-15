@@ -9,6 +9,7 @@ import { useAppContext } from '../navigation/AppContext';
 import { createRecipeViaBackend } from '../api/backend';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
+import { typography } from '../theme/typography';
 import type { DifficultyOption, Recipe, TimeOption, VibeOption } from '../types';
 import type { RootStackParamList } from '../types/navigation';
 
@@ -183,9 +184,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   hero: {
+    fontFamily: typography.screenTitle.fontFamily,
     color: colors.foreground,
     fontSize: 26,
-    fontWeight: '800',
   },
   subhero: {
     color: colors.subtext,

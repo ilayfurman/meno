@@ -20,6 +20,7 @@ import {
 } from '../api/backend';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
+import { typography } from '../theme/typography';
 import type { StoredRecipe } from '../types';
 import type { RootStackParamList } from '../types/navigation';
 
@@ -206,9 +207,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   title: {
+    fontFamily: typography.screenTitle.fontFamily,
     color: colors.foreground,
     fontSize: 24,
-    fontWeight: '800',
     marginTop: 8,
   },
   meta: {
@@ -248,9 +249,8 @@ const styles = StyleSheet.create({
     borderColor: colors.accent,
   },
   versionPillText: {
+    ...typography.versionPill,
     color: colors.subtext,
-    fontWeight: '700',
-    fontSize: 12,
   },
   versionPillTextActive: {
     color: '#fff',
@@ -294,9 +294,9 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   sectionKicker: {
+    fontFamily: typography.sectionKicker.fontFamily,
     color: colors.accent,
     fontSize: 11,
-    fontWeight: '700',
     letterSpacing: 0.6,
     textTransform: 'uppercase',
     marginTop: 8,

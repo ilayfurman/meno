@@ -9,6 +9,7 @@ import { getCookbookViaBackend, getPreferencesViaBackend } from '../api/backend'
 import { useAppContext } from '../navigation/AppContext';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
+import { typography } from '../theme/typography';
 import type { RootStackParamList } from '../types/navigation';
 
 export function ProfileScreen() {
@@ -134,17 +135,17 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   kicker: {
+    fontFamily: typography.sectionKicker.fontFamily,
     color: colors.accent,
     fontSize: 11,
-    fontWeight: '700',
     letterSpacing: 0.6,
     textTransform: 'uppercase',
     marginTop: 8,
   },
   title: {
+    fontFamily: typography.screenTitle.fontFamily,
     color: colors.foreground,
     fontSize: 28,
-    fontWeight: '800',
     letterSpacing: -0.5,
     marginTop: 4,
     marginBottom: 16,

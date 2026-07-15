@@ -1,15 +1,18 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import { useFonts } from 'expo-font';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import { AppContextProvider } from './src/navigation/AppContext';
 import { defaultPreferences, getPreferences, savePreferences } from './src/storage/preferences';
 import { defaultBilling, defaultUserProfile, getBilling, getUserProfile, saveBilling, saveUserProfile } from './src/storage/account';
 import { generateFullRecipeFromSummary, generateRecipeSummaries } from './src/ai/openai';
 import { generateRecipeSummariesViaBackend, hydrateRecipeViaBackend, isBackendEnabled } from './src/api/backend';
+import { fontsToLoad } from './src/theme/fonts';
 import type { BillingInfo, GeneratedRecipeRun, GenerationRequest, Recipe, UserPreferences, UserProfile } from './src/types';
 
 export default function App() {
+  const [fontsLoaded] = useFonts(fontsToLoad);
   const [preferences, setPreferencesState] = useState<UserPreferences | null>(null);
   const [userProfile, setUserProfileState] = useState<UserProfile | null>(null);
   const [billing, setBillingState] = useState<BillingInfo | null>(null);
@@ -328,7 +331,7 @@ export default function App() {
     [preferences, userProfile, billing, generatedRuns, isGenerating],
   );
 
-  if (!preferences || !userProfile || !billing) {
+  if (!fontsLoaded || !preferences || !userProfile || !billing) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator />
