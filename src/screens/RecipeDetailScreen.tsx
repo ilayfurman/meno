@@ -1,425 +1,324 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Alert, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
-import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { AccordionSection } from '../components/AccordionSection';
+import React, { useCallback, useEffect, useState } from 'react';
+import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { RouteProp } from '@react-navigation/native';
+import { MattedPhoto } from '../components/MattedPhoto';
+import { TagPill } from '../components/TagPill';
+import { PressableScale } from '../components/PressableScale';
+import { BottomSheet } from '../components/BottomSheet';
+import { VideoAttachmentCard } from '../components/VideoAttachmentCard';
+import { ShareRecipeSheet } from '../components/ShareRecipeSheet';
+import { ContinueIteratingSheet } from '../components/ContinueIteratingSheet';
 import { IngredientsList } from '../components/IngredientsList';
 import { StepsList } from '../components/StepsList';
-import { SubstitutionsList } from '../components/SubstitutionsList';
-import { BottomActionBar } from '../components/BottomActionBar';
-import { Chip } from '../components/Chip';
+import {
+  getRecipeViaBackend,
+  setCurrentVersionViaBackend,
+  setFavoriteViaBackend,
+  setVideoLinkViaBackend,
+} from '../api/backend';
 import { colors } from '../theme/colors';
-import { generateRecipes } from '../ai/openai';
-import { useAppContext } from '../navigation/AppContext';
-import { getCookbook } from '../storage/cookbook';
-import type { Recipe } from '../types';
+import { spacing } from '../theme/spacing';
+import type { StoredRecipe } from '../types';
 import type { RootStackParamList } from '../types/navigation';
-import { buildSingleRecipeShare } from '../utils/recipeShare';
-import { getDisplayIngredients, type UnitSystem } from '../utils/ingredients';
 
-type Props = NativeStackScreenProps<RootStackParamList, 'RecipeDetail'>;
-const ENABLE_ADVANCED_YIELD_CONTROLS = false;
+type Route = RouteProp<RootStackParamList, 'RecipeDetail'>;
 
-export function RecipeDetailScreen({ route }: Props) {
-  const [recipe, setRecipe] = useState<Recipe>(route.params.recipe);
-  const [adjustInput, setAdjustInput] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [saved, setSaved] = useState(route.params.requestId === 'cookbook');
-  const [hasAdjustmentDraft, setHasAdjustmentDraft] = useState(false);
-  const [baseRecipeId, setBaseRecipeId] = useState(route.params.recipe.id);
-  const [targetServings, setTargetServings] = useState(route.params.recipe.servings);
-  const [unitSystem, setUnitSystem] = useState<UnitSystem>('original');
-  const { preferences, saveRecipe, saveRecipeRevision, removeRecipe, getRecipeForRun, hydrateRun } = useAppContext();
-  const [isHydratingDetail, setIsHydratingDetail] = useState(route.params.recipe.completion_state === 'summary');
-  const hydrationRequestedForRun = useRef<string | null>(null);
+export function RecipeDetailScreen() {
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const route = useRoute<Route>();
+  const { recipeId } = route.params;
 
-  const summaryRecipeId = route.params.sourceRecipeId ?? route.params.recipe.id;
-  const runId = route.params.runId;
+  const [recipe, setRecipe] = useState<StoredRecipe | null>(null);
+  const [activeVersionIndex, setActiveVersionIndex] = useState(0);
+  const [shareSheetOpen, setShareSheetOpen] = useState(false);
+  const [continueSheetOpen, setContinueSheetOpen] = useState(false);
+  const [videoEditOpen, setVideoEditOpen] = useState(false);
+  const [videoInput, setVideoInput] = useState('');
 
-  const activeTargetServings = ENABLE_ADVANCED_YIELD_CONTROLS ? targetServings : recipe.servings;
-  const activeUnitSystem: UnitSystem = ENABLE_ADVANCED_YIELD_CONTROLS ? unitSystem : 'original';
-
-  const displayedIngredients = getDisplayIngredients({
-    ingredients: recipe.ingredients,
-    baseServings: recipe.servings,
-    targetServings: activeTargetServings,
-    unitSystem: activeUnitSystem,
-  });
+  const load = useCallback(async () => {
+    const loaded = await getRecipeViaBackend(recipeId);
+    setRecipe(loaded);
+    const idx = loaded.versions.findIndex((v) => v.id === loaded.current_version.id);
+    setActiveVersionIndex(idx >= 0 ? idx : loaded.versions.length - 1);
+  }, [recipeId]);
 
   useEffect(() => {
-    let mounted = true;
-    void getCookbook().then((items) => {
-      if (mounted) {
-        setSaved(items.some((item) => item.id === recipe.id));
-      }
-    });
-    return () => {
-      mounted = false;
-    };
-  }, [recipe.id]);
+    void load();
+  }, [load]);
 
-  useEffect(() => {
-    setTargetServings(recipe.servings);
-  }, [recipe.id, recipe.servings]);
+  if (!recipe) {
+    return <View style={styles.screen} />;
+  }
 
-  useEffect(() => {
-    if (!runId) {
-      return;
-    }
-    const maybeRecipe = getRecipeForRun(runId, summaryRecipeId);
-    if (maybeRecipe) {
-      setRecipe(maybeRecipe);
-      setIsHydratingDetail(false);
-      hydrationRequestedForRun.current = null;
-      return;
-    }
-    if (!isHydratingDetail) {
-      setIsHydratingDetail(true);
-    }
-    if (hydrationRequestedForRun.current !== runId) {
-      hydrationRequestedForRun.current = runId;
-      void hydrateRun(runId);
-    }
-  }, [runId, summaryRecipeId, getRecipeForRun, hydrateRun]);
+  const activeVersion = recipe.versions[activeVersionIndex] ?? recipe.current_version;
 
-  const regenerateSingle = async (instruction?: string) => {
-    try {
-      setLoading(true);
-      const output = await generateRecipes({
-        preferences,
-        request: route.params.request,
-        count: 1,
-        swapInstruction: instruction,
-        baseRecipe: recipe,
-      });
-      setRecipe(output[0]);
-      setHasAdjustmentDraft(Boolean(instruction));
-      if (instruction) {
-        setAdjustInput('');
-      }
-    } catch (error) {
-      Alert.alert('Could not regenerate', error instanceof Error ? error.message : 'Unexpected error');
-    } finally {
-      setLoading(false);
-    }
+  const handleSelectVersion = async (index: number) => {
+    setActiveVersionIndex(index);
+    const version = recipe.versions[index];
+    if (!version?.id) return;
+    const updated = await setCurrentVersionViaBackend(recipe.id, version.id);
+    setRecipe(updated);
   };
 
-  const onShare = async () => {
+  const handleToggleFavorite = async () => {
+    const next = !recipe.is_favorite;
+    setRecipe({ ...recipe, is_favorite: next });
     try {
-      await Share.share({
-        title: recipe.title,
-        message: buildSingleRecipeShare(recipe),
-      });
+      await setFavoriteViaBackend(recipe.id, next);
     } catch {
-      Alert.alert('Share failed', 'Could not open share sheet.');
+      setRecipe({ ...recipe, is_favorite: !next });
     }
   };
 
-  const onSave = async () => {
-    const wasSaved = saved;
-    setSaved(true);
-    try {
-      const added = await saveRecipe(recipe);
-      if (added) {
-        setBaseRecipeId(recipe.id);
-        Alert.alert('Saved', 'Recipe added to cookbook.');
-        return;
-      }
-      Alert.alert('Already saved', 'This recipe is already in your cookbook.');
-    } catch (error) {
-      setSaved(wasSaved);
-      Alert.alert('Save failed', error instanceof Error ? error.message : 'Could not save recipe.');
-    }
+  const handleOpenVideoEdit = () => {
+    setVideoInput(recipe.video_url ?? '');
+    setVideoEditOpen(true);
   };
 
-  const onRemove = () => {
-    Alert.alert('Remove recipe', 'Remove this recipe from cookbook?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Remove',
-        style: 'destructive',
-        onPress: () => {
-          setSaved(false);
-          void removeRecipe(recipe.id)
-            .then(() => {
-              Alert.alert('Removed', 'Recipe removed from cookbook.');
-            })
-            .catch((error) => {
-              setSaved(true);
-              Alert.alert('Remove failed', error instanceof Error ? error.message : 'Could not remove recipe.');
-            });
-        },
-      },
-    ]);
+  const handleSaveVideo = async () => {
+    const updated = await setVideoLinkViaBackend(recipe.id, videoInput.trim() || null);
+    setRecipe(updated);
+    setVideoEditOpen(false);
   };
 
-  const onSaveAsVersion = async (replaceBase: boolean) => {
-    try {
-      const savedRevision = await saveRecipeRevision({
-        baseRecipeId,
-        revisedRecipe: recipe,
-        replaceBase,
-        changeNote: adjustInput.trim() || recipe.change_note || 'Adjusted recipe',
-      });
-      setRecipe(savedRevision);
-      setBaseRecipeId(savedRevision.id);
-      setSaved(true);
-      setHasAdjustmentDraft(false);
-      Alert.alert('Saved', replaceBase ? 'Recipe replaced with new version.' : 'New recipe version saved.');
-    } catch (error) {
-      Alert.alert('Could not save version', error instanceof Error ? error.message : 'Unexpected error');
-    }
+  const handleRemoveVideo = async () => {
+    const updated = await setVideoLinkViaBackend(recipe.id, null);
+    setRecipe(updated);
+    setVideoEditOpen(false);
   };
 
   return (
-    <View style={styles.shell}>
-      <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-        <View style={styles.hero}>
-          <Text style={styles.heroEmoji}>🥘</Text>
-        </View>
+    <View style={styles.screen}>
+      <ScrollView contentContainerStyle={styles.content}>
+        <PressableScale onPress={() => navigation.goBack()} style={styles.backButton}>
+          <Text style={styles.backButtonText}>‹ Back to Cookbook</Text>
+        </PressableScale>
+
+        <MattedPhoto uri={null} aspectRatio={1.4} borderRadius={22} />
+
         <Text style={styles.title}>{recipe.title}</Text>
+        <Text style={styles.meta}>
+          {recipe.total_time_minutes} min · {recipe.cuisine} · serves {recipe.servings}
+        </Text>
 
-        <View style={styles.metaRow}>
-          <Chip label={`${recipe.total_time_minutes} min`} selected />
-          <Chip label={recipe.difficulty} selected />
-          <Chip label={`Serves ${activeTargetServings}`} selected />
-          {recipe.version_number ? <Chip label={`v${recipe.version_number}`} selected /> : null}
+        <View style={styles.tagRow}>
+          {recipe.versions.length > 1 ? <TagPill label={`v${activeVersion.version_number}`} variant="version" /> : null}
         </View>
 
-        {ENABLE_ADVANCED_YIELD_CONTROLS ? (
-          <View style={styles.adjustRow}>
-            <Text style={styles.adjustLabel}>Yield</Text>
-            <View style={styles.yieldControls}>
-              <Pressable
-                style={styles.yieldButton}
-                onPress={() => setTargetServings((prev) => Math.max(1, prev - 1))}
+        {recipe.video_url && recipe.video_platform ? (
+          <VideoAttachmentCard videoUrl={recipe.video_url} videoPlatform={recipe.video_platform} onEdit={handleOpenVideoEdit} />
+        ) : (
+          <PressableScale onPress={handleOpenVideoEdit} style={styles.addVideoRow}>
+            <Text style={styles.addVideoText}>+ Add a video link</Text>
+          </PressableScale>
+        )}
+
+        {recipe.versions.length > 1 ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.versionStrip}>
+            {recipe.versions.map((version, index) => (
+              <PressableScale
+                key={version.id ?? index}
+                onPress={() => handleSelectVersion(index)}
+                style={[styles.versionPill, index === activeVersionIndex && styles.versionPillActive]}
               >
-                <Text style={styles.yieldButtonText}>-</Text>
-              </Pressable>
-              <Text style={styles.yieldValue}>{targetServings}</Text>
-              <Pressable style={styles.yieldButton} onPress={() => setTargetServings((prev) => prev + 1)}>
-                <Text style={styles.yieldButtonText}>+</Text>
-              </Pressable>
-            </View>
+                <Text style={[styles.versionPillText, index === activeVersionIndex && styles.versionPillTextActive]}>
+                  v{version.version_number}
+                </Text>
+              </PressableScale>
+            ))}
+          </ScrollView>
+        ) : null}
+
+        {activeVersion.change_note ? (
+          <View style={styles.changeNoteBox}>
+            <Text style={styles.changeNoteText}>{activeVersion.change_note}</Text>
           </View>
         ) : null}
 
-        {ENABLE_ADVANCED_YIELD_CONTROLS ? (
-          <View style={styles.metaRow}>
-            <Chip label="Original" selected={unitSystem === 'original'} onPress={() => setUnitSystem('original')} />
-            <Chip label="Metric" selected={unitSystem === 'metric'} onPress={() => setUnitSystem('metric')} />
-            <Chip label="US" selected={unitSystem === 'us'} onPress={() => setUnitSystem('us')} />
-          </View>
-        ) : null}
-
-        <AccordionSection title="Ingredients" initiallyOpen>
-          {isHydratingDetail ? (
-            <Text style={styles.loadingText}>Finishing ingredients...</Text>
-          ) : (
-            <IngredientsList ingredients={displayedIngredients} />
-          )}
-        </AccordionSection>
-
-        <AccordionSection title="Steps" initiallyOpen>
-          {isHydratingDetail ? <Text style={styles.loadingText}>Building steps...</Text> : <StepsList steps={recipe.steps} />}
-        </AccordionSection>
-
-        <AccordionSection title="Substitutions" initiallyOpen>
-          {isHydratingDetail ? (
-            <Text style={styles.loadingText}>Preparing substitution suggestions...</Text>
-          ) : (
-            <SubstitutionsList substitutions={recipe.substitutions} />
-          )}
-        </AccordionSection>
-
-        <View style={styles.adjustBox}>
-          <Text style={styles.adjustTitle}>Adjust this recipe</Text>
-          <TextInput
-            style={styles.swapInput}
-            value={adjustInput}
-            onChangeText={setAdjustInput}
-            placeholder="e.g. make it kosher, less spicy, higher protein"
-          />
-          <View style={styles.adjustActions}>
-            <Pressable
-              style={[styles.adjustButton, (!adjustInput.trim() || loading) && styles.adjustButtonDisabled]}
-              onPress={() => void regenerateSingle(adjustInput.trim())}
-              disabled={!adjustInput.trim() || loading || isHydratingDetail}
-            >
-              <Text style={styles.adjustButtonText}>Generate adjustment</Text>
-            </Pressable>
-            {ENABLE_ADVANCED_YIELD_CONTROLS ? (
-              <Pressable
-                style={[
-                  styles.adjustButtonSecondary,
-                  (loading || isHydratingDetail || targetServings === recipe.servings) && styles.adjustButtonDisabled,
-                ]}
-                onPress={() =>
-                  void regenerateSingle(
-                    `Rebalance ingredient amounts and steps for ${targetServings} servings. ${adjustInput.trim()}`.trim(),
-                  )
-                }
-                disabled={loading || isHydratingDetail || targetServings === recipe.servings}
-              >
-                <Text style={styles.adjustButtonSecondaryText}>Rebalance for yield</Text>
-              </Pressable>
-            ) : null}
-            {saved && hasAdjustmentDraft ? (
-              <>
-                <Pressable style={styles.adjustButtonSecondary} onPress={() => void onSaveAsVersion(false)}>
-                  <Text style={styles.adjustButtonSecondaryText}>Save as new version</Text>
-                </Pressable>
-                <Pressable style={styles.adjustButtonSecondary} onPress={() => void onSaveAsVersion(true)}>
-                  <Text style={styles.adjustButtonSecondaryText}>Replace current</Text>
-                </Pressable>
-              </>
-            ) : null}
-          </View>
+        <View style={styles.actionRow}>
+          <PressableScale onPress={handleToggleFavorite} style={styles.actionButton}>
+            <Text style={styles.actionButtonText}>{recipe.is_favorite ? '♥ Favorited' : '♡ Favorite'}</Text>
+          </PressableScale>
+          <PressableScale onPress={() => setShareSheetOpen(true)} style={styles.actionButton}>
+            <Text style={styles.actionButtonText}>Share</Text>
+          </PressableScale>
+          <PressableScale onPress={() => setContinueSheetOpen(true)} style={styles.primaryActionButton}>
+            <Text style={styles.primaryActionButtonText}>Continue iterating</Text>
+          </PressableScale>
         </View>
+
+        <Text style={styles.sectionKicker}>Ingredients</Text>
+        <IngredientsList ingredients={activeVersion.ingredients} />
+
+        <Text style={styles.sectionKicker}>Steps</Text>
+        <StepsList steps={activeVersion.steps} />
       </ScrollView>
 
-      <BottomActionBar
-        actions={[
-          saved ? { label: 'Saved', onPress: () => {}, disabled: true, tone: 'secondary' } : { label: 'Save', onPress: () => void onSave(), tone: 'primary', disabled: isHydratingDetail },
-          { label: 'Share', onPress: () => void onShare(), tone: 'secondary', disabled: isHydratingDetail },
-          ...(saved
-            ? [{ label: 'Remove', onPress: () => onRemove(), tone: 'secondary' as const }]
-            : []),
-          { label: 'Regenerate', onPress: () => void regenerateSingle(), disabled: loading || isHydratingDetail, tone: 'primary' },
-        ]}
-      />
+      <ShareRecipeSheet visible={shareSheetOpen} onDismiss={() => setShareSheetOpen(false)} recipe={recipe} />
+      <ContinueIteratingSheet visible={continueSheetOpen} onDismiss={() => setContinueSheetOpen(false)} recipe={recipe} />
+
+      <BottomSheet visible={videoEditOpen} onDismiss={() => setVideoEditOpen(false)}>
+        <Text style={styles.videoEditTitle}>Video link</Text>
+        <TextInput
+          value={videoInput}
+          onChangeText={setVideoInput}
+          placeholder="Paste a TikTok, Instagram, or YouTube link"
+          autoCapitalize="none"
+          style={styles.videoInput}
+        />
+        <View style={styles.videoEditActions}>
+          <PressableScale onPress={() => setVideoEditOpen(false)} style={styles.actionButton}>
+            <Text style={styles.actionButtonText}>Cancel</Text>
+          </PressableScale>
+          {recipe.video_url ? (
+            <PressableScale onPress={handleRemoveVideo} style={styles.actionButton}>
+              <Text style={[styles.actionButtonText, { color: colors.danger }]}>Remove</Text>
+            </PressableScale>
+          ) : null}
+          <PressableScale onPress={handleSaveVideo} style={styles.primaryActionButton}>
+            <Text style={styles.primaryActionButtonText}>Save</Text>
+          </PressableScale>
+        </View>
+      </BottomSheet>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  shell: {
+  screen: {
     flex: 1,
     backgroundColor: colors.background,
   },
-  screen: {
-    flex: 1,
-  },
   content: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
+    padding: spacing.screenPadding,
+    paddingBottom: 60,
     gap: 12,
-    paddingBottom: 24,
   },
-  hero: {
-    height: 220,
-    borderRadius: 22,
-    backgroundColor: '#F1E5D8',
-    alignItems: 'center',
-    justifyContent: 'center',
+  backButton: {
+    alignSelf: 'flex-start',
+    marginBottom: 4,
   },
-  heroEmoji: {
-    fontSize: 80,
+  backButtonText: {
+    color: colors.accent,
+    fontSize: 14,
+    fontWeight: '600',
   },
   title: {
-    fontSize: 33,
-    color: colors.textPrimary,
+    color: colors.foreground,
+    fontSize: 24,
+    fontWeight: '800',
+    marginTop: 8,
+  },
+  meta: {
+    color: colors.subtext,
+    fontSize: 13.5,
+  },
+  tagRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  addVideoRow: {
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: colors.hairline,
+    borderRadius: 16,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  addVideoText: {
+    color: colors.subtext,
     fontWeight: '600',
-    lineHeight: 39,
+    fontSize: 13,
   },
-  metaRow: {
-    flexDirection: 'row',
-    gap: 8,
-    flexWrap: 'wrap',
+  versionStrip: {
+    flexGrow: 0,
   },
-  adjustRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  adjustLabel: {
-    color: colors.textSecondary,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  yieldControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  yieldButton: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
+  versionPill: {
+    borderRadius: spacing.radiusPill,
     borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.surface,
+    borderColor: colors.hairline,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    marginRight: 8,
   },
-  yieldButtonText: {
-    color: colors.textPrimary,
-    fontSize: 18,
+  versionPillActive: {
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
+  },
+  versionPillText: {
+    color: colors.subtext,
     fontWeight: '700',
-    marginTop: -1,
+    fontSize: 12,
   },
-  yieldValue: {
-    color: colors.textPrimary,
-    fontSize: 16,
-    fontWeight: '700',
-    minWidth: 18,
-    textAlign: 'center',
-  },
-  adjustBox: {
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    padding: 10,
-    gap: 8,
-  },
-  adjustTitle: {
-    color: colors.textPrimary,
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  swapInput: {
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: '#fff',
-    paddingHorizontal: 12,
-    paddingVertical: 11,
-    fontSize: 16,
-  },
-  adjustActions: {
-    flexDirection: 'row',
-    gap: 8,
-    flexWrap: 'wrap',
-  },
-  adjustButton: {
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    backgroundColor: colors.primaryAccent,
-  },
-  adjustButtonDisabled: {
-    opacity: 0.5,
-  },
-  adjustButtonText: {
+  versionPillTextActive: {
     color: '#fff',
-    fontSize: 13,
-    fontWeight: '700',
   },
-  adjustButtonSecondary: {
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+  changeNoteBox: {
+    backgroundColor: colors.matBackground,
+    borderRadius: 14,
+    padding: 12,
+  },
+  changeNoteText: {
+    color: colors.foreground,
+    fontStyle: 'italic',
+    fontSize: 13,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  actionButton: {
     borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: '#fff',
+    borderColor: colors.hairline,
+    borderRadius: spacing.radiusPill,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
-  adjustButtonSecondaryText: {
-    color: colors.textSecondary,
-    fontSize: 13,
+  actionButtonText: {
+    color: colors.foreground,
     fontWeight: '700',
+    fontSize: 13,
   },
-  loadingText: {
-    color: colors.textSecondary,
-    fontSize: 14,
+  primaryActionButton: {
+    flex: 1,
+    alignItems: 'center',
+    backgroundColor: colors.accent,
+    borderRadius: spacing.radiusPill,
+    paddingVertical: 10,
+  },
+  primaryActionButtonText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  sectionKicker: {
+    color: colors.accent,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+    marginTop: 8,
+  },
+  videoEditTitle: {
+    color: colors.foreground,
+    fontSize: 18,
+    fontWeight: '800',
+    marginBottom: 12,
+  },
+  videoInput: {
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    borderRadius: spacing.radiusCard,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: colors.foreground,
+  },
+  videoEditActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 16,
   },
 });
