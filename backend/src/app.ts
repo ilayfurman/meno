@@ -1,6 +1,8 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import sensible from '@fastify/sensible';
+import multipart from '@fastify/multipart';
+import { PDFParse } from 'pdf-parse';
 import { and, count, eq, gte, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { authGuard } from './plugins/auth.js';
@@ -14,12 +16,19 @@ import {
   eventCreateSchema,
   generationRequestSchema,
   hydrationRequestSchema,
+  importTextSchema,
   importUrlSchema,
   recipeSummaryListSchema,
   updateVideoLinkSchema,
   type Recipe,
 } from './types/recipe.js';
-import { askAgent, generateRecipeSummariesWithAi, generateRecipesWithAi, hydrateRecipeFromSummaryWithAi } from './services/openai.js';
+import {
+  askAgent,
+  generateRecipeSummariesWithAi,
+  generateRecipesWithAi,
+  hydrateRecipeFromSummaryWithAi,
+  structureRecipeFromText,
+} from './services/openai.js';
 import {
   addRecipeVersion,
   createRecipeForUser,
@@ -120,6 +129,9 @@ export function createApp() {
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
   });
   void app.register(sensible);
+  void app.register(multipart, {
+    limits: { fileSize: env.MAX_IMPORT_RESPONSE_BYTES },
+  });
 
   app.get('/health', async () => ({ ok: true }));
 
@@ -541,6 +553,73 @@ export function createApp() {
       source_url: imported.source_url,
     });
     await saveRecipeToCookbook(request.auth.userId, recipe.id);
+
+    return { recipe };
+  });
+
+  app.post('/v1/recipes/import-text', async (request, reply) => {
+    const parsed = importTextSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return sendValidationError(reply, parsed.error.flatten());
+    }
+
+    const extracted = await structureRecipeFromText(parsed.data.text);
+    const recipe = await createRecipeForUser(request.auth.userId, {
+      ...extracted.recipe,
+      source_type: 'text',
+    });
+    await saveRecipeToCookbook(request.auth.userId, recipe.id);
+
+    await db.insert(aiUsage).values({
+      userId: request.auth.userId,
+      endpoint: '/v1/recipes/import-text',
+      model: env.OPENAI_MODEL,
+      inputTokens: extracted.usage?.prompt_tokens ?? 0,
+      outputTokens: extracted.usage?.completion_tokens ?? 0,
+      costEstimateUsd: '0.000000',
+    });
+
+    return { recipe };
+  });
+
+  app.post('/v1/recipes/import-pdf', async (request, reply) => {
+    const file = await request.file();
+    if (!file) {
+      return reply.code(400).send({ error: 'No file uploaded.' });
+    }
+    if (file.mimetype !== 'application/pdf') {
+      return reply.code(400).send({ error: 'Only PDF files are supported.' });
+    }
+
+    const buffer = await file.toBuffer();
+    const parser = new PDFParse({ data: buffer });
+    let text: string;
+    try {
+      const result = await parser.getText();
+      text = result.text;
+    } finally {
+      await parser.destroy();
+    }
+
+    if (!text.trim()) {
+      return reply.code(400).send({ error: 'Could not extract any text from this PDF.' });
+    }
+
+    const extracted = await structureRecipeFromText(text);
+    const recipe = await createRecipeForUser(request.auth.userId, {
+      ...extracted.recipe,
+      source_type: 'pdf',
+    });
+    await saveRecipeToCookbook(request.auth.userId, recipe.id);
+
+    await db.insert(aiUsage).values({
+      userId: request.auth.userId,
+      endpoint: '/v1/recipes/import-pdf',
+      model: env.OPENAI_MODEL,
+      inputTokens: extracted.usage?.prompt_tokens ?? 0,
+      outputTokens: extracted.usage?.completion_tokens ?? 0,
+      costEstimateUsd: '0.000000',
+    });
 
     return { recipe };
   });

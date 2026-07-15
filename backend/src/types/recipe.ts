@@ -96,8 +96,26 @@ export const updateVideoLinkSchema = z.object({
   video_url: z.string().url().nullable(),
 });
 
+export const extractedRecipeSchema = z.object({
+  title: z.string(),
+  cuisine: z.string(),
+  servings: z.number().int().min(1),
+  total_time_minutes: z.number().int().min(1),
+  difficulty: z.string(),
+  short_hook: z.string(),
+  dietary_tags: z.array(z.string()),
+  allergen_warnings: z.array(z.string()),
+  ingredients: z.array(ingredientSchema),
+  steps: z.array(stepSchema),
+});
+
+export const importTextSchema = z.object({
+  text: z.string().min(1),
+});
+
 export type StoredRecipe = z.infer<typeof storedRecipeSchema>;
 export type RecipeVersion = z.infer<typeof recipeVersionSchema>;
+export type ExtractedRecipe = z.infer<typeof extractedRecipeSchema>;
 
 export const recipeSummarySchema = z.object({
   id: z.string(),
