@@ -19,6 +19,7 @@
       "bundleIdentifier": "com.meno.app"
     },
     "android": {
+      "package": "com.meno.app",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -27,6 +28,9 @@
     "web": {
       "bundler": "metro",
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      "expo-document-picker"
+    ]
   }
 }

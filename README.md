@@ -49,6 +49,23 @@ Alternative:
 npm start
 ```
 
+## Dev Client (replaces Expo Go)
+
+The cookbook redesign needs native capabilities Expo Go can't provide (share-sheet target registration, native file picker, native PDF export/share) — see `docs/superpowers/specs/2026-07-15-cookbook-redesign-design.md`. Day-to-day development now runs through a custom EAS development client instead of the generic Expo Go app.
+
+One-time setup (run these yourself — they need your own Expo account login):
+
+```bash
+npx eas-cli login          # log into your Expo account
+npx eas-cli init           # links this project to an EAS project, writes extra.eas.projectId into app.json
+npm run build:dev:ios      # cloud build, ~10-15 min; installs on device/simulator when done
+npm run build:dev:android  # same, for Android
+```
+
+After that, day-to-day workflow is unchanged — `npm start` (now aliased to `expo start --dev-client`), open the app you just built instead of Expo Go, edit code, see it hot-reload. You only need to re-run a `build:dev:*` command when a *new* native module or config is added, not on every code change.
+
+Note: registering Meno as an iOS/Android share-sheet **target** (so TikTok/Instagram/Safari can share *into* Meno) requires a native share-extension config plugin tied to your Apple Developer account (App Group identifier, provisioning) — that's a follow-up step once you have an Apple Developer account set up, not included in this pass. Everything else (native file picker for PDF import via `expo-document-picker`, native PDF generation via `expo-print`, and Meno-initiated native share sheet via `expo-sharing`) is already installed and works today via the dev client.
+
 ## Backend (new)
 
 1. Install backend dependencies:
