@@ -1,39 +1,38 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { OptionChip } from '../components/OptionChip';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { colors } from '../constants/theme';
-import { allergyOptions, type Allergy } from '../types';
+import { updatePreferencesViaBackend } from '../api/backend';
 import type { RootStackParamList } from '../types/navigation';
-import { useAppContext } from '../navigation/AppContext';
+
+const avoidOptions = ['No Nuts', 'No Dairy', 'No Gluten', 'No Shellfish'];
 
 type Props = NativeStackScreenProps<RootStackParamList, 'OnboardingAllergies'>;
 
 export function OnboardingAllergiesScreen({ navigation }: Props) {
-  const { preferences, setPreferences } = useAppContext();
+  const [avoid, setAvoid] = useState<string[]>([]);
 
-  const toggleAllergy = (item: Allergy) => {
-    const has = preferences.allergies.includes(item);
-    const next = has ? preferences.allergies.filter((a) => a !== item) : [...preferences.allergies, item];
-    setPreferences({ ...preferences, allergies: next });
+  const toggle = (item: string) => {
+    setAvoid((prev) => (prev.includes(item) ? prev.filter((a) => a !== item) : [...prev, item]));
+  };
+
+  const handleNext = () => {
+    void updatePreferencesViaBackend({ avoid });
+    navigation.navigate('OnboardingPrefs');
   };
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Any allergies?</Text>
+      <Text style={styles.title}>Anything to avoid?</Text>
       <Text style={styles.subtitle}>Multi-select all that apply.</Text>
       <View style={styles.wrap}>
-        {allergyOptions.map((item) => (
-          <OptionChip
-            key={item}
-            label={item}
-            selected={preferences.allergies.includes(item)}
-            onPress={() => toggleAllergy(item)}
-          />
+        {avoidOptions.map((item) => (
+          <OptionChip key={item} label={item} selected={avoid.includes(item)} onPress={() => toggle(item)} />
         ))}
       </View>
-      <PrimaryButton title="Next" onPress={() => navigation.navigate('OnboardingPrefs')} />
+      <PrimaryButton title="Next" onPress={handleNext} />
     </View>
   );
 }

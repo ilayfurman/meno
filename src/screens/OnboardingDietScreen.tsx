@@ -1,33 +1,34 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { OptionChip } from '../components/OptionChip';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { colors } from '../constants/theme';
-import { dietaryRestrictionOptions } from '../types';
+import { updatePreferencesViaBackend } from '../api/backend';
 import type { RootStackParamList } from '../types/navigation';
-import { useAppContext } from '../navigation/AppContext';
+
+const dietOptions = ['Vegetarian', 'Vegan', 'Pescatarian', 'Omnivore'];
 
 type Props = NativeStackScreenProps<RootStackParamList, 'OnboardingDiet'>;
 
 export function OnboardingDietScreen({ navigation }: Props) {
-  const { preferences, setPreferences } = useAppContext();
+  const [diet, setDiet] = useState<string | null>(null);
+
+  const handleNext = () => {
+    void updatePreferencesViaBackend({ diet });
+    navigation.navigate('OnboardingAllergies');
+  };
 
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Set your dietary style</Text>
       <Text style={styles.subtitle}>You can edit this anytime.</Text>
       <View style={styles.wrap}>
-        {dietaryRestrictionOptions.map((item) => (
-          <OptionChip
-            key={item}
-            label={item}
-            selected={preferences.dietaryRestriction === item}
-            onPress={() => setPreferences({ ...preferences, dietaryRestriction: item })}
-          />
+        {dietOptions.map((item) => (
+          <OptionChip key={item} label={item} selected={diet === item} onPress={() => setDiet(diet === item ? null : item)} />
         ))}
       </View>
-      <PrimaryButton title="Next" onPress={() => navigation.navigate('OnboardingAllergies')} />
+      <PrimaryButton title="Next" onPress={handleNext} />
     </View>
   );
 }
