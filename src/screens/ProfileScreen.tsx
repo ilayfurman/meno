@@ -1,100 +1,124 @@
-import React, { useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
-import { colors } from '../theme/colors';
+import React, { useEffect, useState } from 'react';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { PressableScale } from '../components/PressableScale';
+import { BottomSheet } from '../components/BottomSheet';
+import { ProfileSettingsRow } from '../components/ProfileSettingsRow';
+import { getCookbookViaBackend, getPreferencesViaBackend } from '../api/backend';
 import { useAppContext } from '../navigation/AppContext';
-import { clearCookbook } from '../storage/cookbook';
-import { defaultPreferences } from '../storage/preferences';
-import { AccountScreen } from './AccountScreen';
-import { FoodPreferencesScreen } from './FoodPreferencesScreen';
-import { BillingScreen } from './BillingScreen';
-import { SupportScreen } from './SupportScreen';
-
-type ProfileSubscreen = 'root' | 'account' | 'food' | 'billing' | 'support';
-
-function SettingsRow({ label, subtitle, onPress }: { label: string; subtitle: string; onPress: () => void }) {
-  return (
-    <Pressable style={styles.row} onPress={onPress}>
-      <View style={styles.rowTextWrap}>
-        <Text style={styles.rowLabel}>{label}</Text>
-        <Text style={styles.rowSub}>{subtitle}</Text>
-      </View>
-      <Text style={styles.chevron}>›</Text>
-    </Pressable>
-  );
-}
+import { colors } from '../theme/colors';
+import { spacing } from '../theme/spacing';
+import type { RootStackParamList } from '../types/navigation';
 
 export function ProfileScreen() {
-  const [dangerOpen, setDangerOpen] = useState(false);
-  const [subscreen, setSubscreen] = useState<ProfileSubscreen>('root');
-  const { setPreferences, userProfile, billing } = useAppContext();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const { userProfile } = useAppContext();
+  const [recipeCount, setRecipeCount] = useState(0);
+  const [favoriteCount, setFavoriteCount] = useState(0);
+  const [dietSummary, setDietSummary] = useState('Not set');
+  const [plan, setPlan] = useState('free');
+  const [signOutOpen, setSignOutOpen] = useState(false);
 
-  const resetPreferences = () => {
-    setPreferences({ ...defaultPreferences, onboardingComplete: true });
-    Alert.alert('Reset complete', 'Preferences reset. Cookbook recipes were kept.');
-  };
+  useEffect(() => {
+    void getCookbookViaBackend().then((recipes) => {
+      setRecipeCount(recipes.length);
+      setFavoriteCount(recipes.filter((r) => r.is_favorite).length);
+    });
+    void getPreferencesViaBackend().then(({ preferences, plan: currentPlan }) => {
+      const summary = [preferences.diet, ...preferences.avoid].filter(Boolean).join(', ');
+      setDietSummary(summary || 'Not set');
+      setPlan(currentPlan);
+    });
+  }, []);
 
-  const clearAll = () => {
-    Alert.alert('Delete all data', 'This clears preferences and all saved cookbook recipes.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: () => {
-          setPreferences({ ...defaultPreferences, onboardingComplete: true });
-          void clearCookbook();
-        },
-      },
-    ]);
-  };
-
-  if (subscreen !== 'root') {
-    return (
-      <View style={styles.screen}>
-        <Pressable style={styles.backRow} onPress={() => setSubscreen('root')}>
-          <Text style={styles.backText}>‹ Back to Profile</Text>
-        </Pressable>
-
-        <View style={styles.subscreenWrap}>
-          {subscreen === 'account' ? <AccountScreen /> : null}
-          {subscreen === 'food' ? <FoodPreferencesScreen /> : null}
-          {subscreen === 'billing' ? <BillingScreen /> : null}
-          {subscreen === 'support' ? <SupportScreen /> : null}
-        </View>
-      </View>
-    );
-  }
+  const initial = userProfile.name.trim().charAt(0).toUpperCase() || '?';
 
   return (
     <View style={styles.screen}>
-      <Text style={styles.title}>Profile</Text>
+      <ScrollView contentContainerStyle={styles.content}>
+        <Text style={styles.kicker}>Profile</Text>
+        <Text style={styles.title}>Your account</Text>
 
-      <View style={styles.section}>
-        <SettingsRow label="Account" subtitle={`${userProfile.name} · ${userProfile.email}`} onPress={() => setSubscreen('account')} />
-        <SettingsRow label="Food Preferences" subtitle="Dietary, allergies, cuisine, spice" onPress={() => setSubscreen('food')} />
-        <SettingsRow label="Billing & Plan" subtitle={`Current plan: ${billing.plan}`} onPress={() => setSubscreen('billing')} />
-        <SettingsRow label="Support" subtitle="Help, terms, privacy" onPress={() => setSubscreen('support')} />
-      </View>
-
-      <View style={styles.inlineActions}>
-        <Pressable style={styles.pill} onPress={resetPreferences}>
-          <Text style={styles.pillText}>Reset preferences</Text>
-        </Pressable>
-      </View>
-
-      <View style={styles.dangerZone}>
-        <Pressable style={styles.dangerHeader} onPress={() => setDangerOpen((v) => !v)}>
-          <Text style={styles.dangerTitle}>Danger Zone</Text>
-          <Text style={styles.chevron}>{dangerOpen ? '⌄' : '›'}</Text>
-        </Pressable>
-        {dangerOpen ? (
-          <View style={styles.dangerBody}>
-            <Pressable onPress={clearAll}>
-              <Text style={styles.deleteText}>Delete all data</Text>
-            </Pressable>
-            <Text style={styles.helper}>Removes saved recipes and resets all preferences.</Text>
+        <View style={styles.identityRow}>
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>{initial}</Text>
           </View>
-        ) : null}
-      </View>
+          <View>
+            <Text style={styles.name}>{userProfile.name}</Text>
+            <Text style={styles.email}>{userProfile.email}</Text>
+          </View>
+        </View>
+
+        <View style={styles.statRow}>
+          <View style={styles.statTile}>
+            <Text style={styles.statValue}>{recipeCount}</Text>
+            <Text style={styles.statLabel}>Recipes</Text>
+          </View>
+          <View style={styles.statTile}>
+            <Text style={styles.statValue}>0</Text>
+            <Text style={styles.statLabel}>Connected</Text>
+          </View>
+          <View style={styles.statTile}>
+            <Text style={styles.statValue}>{favoriteCount}</Text>
+            <Text style={styles.statLabel}>Favorites</Text>
+          </View>
+        </View>
+
+        <PressableScale onPress={() => navigation.navigate('ProfilePlans')} style={styles.planCard}>
+          <View>
+            <Text style={styles.planName}>{plan === 'free' ? 'Free plan' : 'Meno Plus'}</Text>
+            <Text style={styles.planSummary}>
+              {plan === 'free' ? 'Quick Generate + manual save/import' : 'Higher quota + priority import'}
+            </Text>
+          </View>
+          <View style={styles.upgradePill}>
+            <Text style={styles.upgradePillText}>Upgrade</Text>
+          </View>
+        </PressableScale>
+
+        <Text style={styles.sectionLabel}>Preferences</Text>
+        <View style={styles.groupedList}>
+          <ProfileSettingsRow label="Dietary & allergies" value={dietSummary} onPress={() => navigation.navigate('ProfileDietary')} />
+          <ProfileSettingsRow label="Notifications" onPress={() => navigation.navigate('ProfileNotifications')} />
+        </View>
+
+        <Text style={styles.sectionLabel}>Support</Text>
+        <View style={styles.groupedList}>
+          <ProfileSettingsRow label="Help Center" onPress={() => navigation.navigate('ProfileHelpCenter')} />
+          <ProfileSettingsRow label="Contact us" onPress={() => navigation.navigate('ProfileContactUs')} />
+          <ProfileSettingsRow label="Rate Meno" onPress={() => navigation.navigate('ProfileRateMeno')} />
+        </View>
+
+        <Text style={styles.sectionLabel}>Legal</Text>
+        <View style={styles.groupedList}>
+          <ProfileSettingsRow label="Terms of Service" onPress={() => navigation.navigate('ProfileTerms')} />
+          <ProfileSettingsRow label="Privacy Policy" onPress={() => navigation.navigate('ProfilePrivacy')} />
+        </View>
+
+        <PressableScale onPress={() => setSignOutOpen(true)} style={styles.signOutRow}>
+          <Text style={styles.signOutText}>Sign out</Text>
+        </PressableScale>
+      </ScrollView>
+
+      <BottomSheet visible={signOutOpen} onDismiss={() => setSignOutOpen(false)}>
+        <Text style={styles.signOutTitle}>Sign out of Meno?</Text>
+        <View style={styles.signOutActions}>
+          <PressableScale onPress={() => setSignOutOpen(false)} style={styles.signOutCancel}>
+            <Text style={styles.signOutCancelText}>Cancel</Text>
+          </PressableScale>
+          <PressableScale
+            onPress={() => {
+              // No real auth session exists client-side yet (dev-auth only) — wire
+              // this to Clerk's sign-out once client auth is integrated.
+              setSignOutOpen(false);
+            }}
+            style={styles.signOutConfirm}
+          >
+            <Text style={styles.signOutConfirmText}>Sign out</Text>
+          </PressableScale>
+        </View>
+      </BottomSheet>
     </View>
   );
 }
@@ -103,111 +127,162 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: colors.background,
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    gap: 16,
   },
-  backRow: {
-    paddingVertical: 4,
+  content: {
+    paddingHorizontal: spacing.screenPadding,
+    paddingBottom: 120,
+    gap: 4,
   },
-  backText: {
-    color: colors.primaryAccent,
+  kicker: {
+    color: colors.accent,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+    marginTop: 8,
+  },
+  title: {
+    color: colors.foreground,
+    fontSize: 28,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+    marginTop: 4,
+    marginBottom: 16,
+  },
+  identityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 16,
+  },
+  avatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.foreground,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  name: {
+    color: colors.foreground,
     fontSize: 16,
     fontWeight: '700',
   },
-  subscreenWrap: {
+  email: {
+    color: colors.subtext,
+    fontSize: 13,
+  },
+  statRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 16,
+  },
+  statTile: {
     flex: 1,
-    marginHorizontal: -16,
-    marginBottom: -16,
+    backgroundColor: colors.matBackground,
+    borderRadius: spacing.radiusCard,
+    paddingVertical: 14,
+    alignItems: 'center',
   },
-  title: {
-    fontSize: 32,
-    fontWeight: '700',
-    color: colors.textPrimary,
+  statValue: {
+    color: colors.foreground,
+    fontSize: 20,
+    fontWeight: '800',
   },
-  section: {
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    overflow: 'hidden',
+  statLabel: {
+    color: colors.subtext,
+    fontSize: 11.5,
+    marginTop: 2,
   },
-  row: {
+  planCard: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    backgroundColor: colors.foreground,
+    borderRadius: spacing.radiusCard,
+    padding: 16,
+    marginBottom: 20,
+  },
+  planName: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  planSummary: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  upgradePill: {
+    backgroundColor: colors.accent,
+    borderRadius: spacing.radiusPill,
     paddingHorizontal: 14,
-    paddingVertical: 13,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  rowTextWrap: {
-    flex: 1,
-    gap: 2,
-  },
-  rowLabel: {
-    color: colors.textPrimary,
-    fontSize: 17,
-    fontWeight: '600',
-  },
-  rowSub: {
-    color: colors.textSecondary,
-    fontSize: 13,
-  },
-  chevron: {
-    color: colors.textSecondary,
-    fontSize: 22,
-    marginLeft: 10,
-  },
-  inlineActions: {
-    flexDirection: 'row',
-  },
-  pill: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 999,
-    paddingHorizontal: 12,
     paddingVertical: 8,
-    backgroundColor: colors.surface,
   },
-  pillText: {
-    color: colors.textSecondary,
-    fontWeight: '600',
+  upgradePillText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  sectionLabel: {
+    color: colors.subtext,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    marginBottom: 6,
+    marginTop: 12,
+  },
+  groupedList: {
+    borderWidth: 1,
+    borderColor: colors.hairlineAlt,
+    borderRadius: spacing.radiusCard,
+    overflow: 'hidden',
+  },
+  signOutRow: {
+    marginTop: 24,
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  signOutText: {
+    color: colors.accent,
+    fontWeight: '700',
     fontSize: 14,
   },
-  dangerZone: {
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    overflow: 'hidden',
+  signOutTitle: {
+    color: colors.foreground,
+    fontSize: 17,
+    fontWeight: '700',
+    marginBottom: 16,
+    textAlign: 'center',
   },
-  dangerHeader: {
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+  signOutActions: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    gap: 10,
+  },
+  signOutCancel: {
+    flex: 1,
     alignItems: 'center',
+    paddingVertical: 14,
   },
-  dangerTitle: {
-    color: colors.textPrimary,
-    fontSize: 15,
-    fontWeight: '600',
+  signOutCancelText: {
+    color: colors.subtext,
+    fontWeight: '700',
   },
-  dangerBody: {
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    gap: 8,
+  signOutConfirm: {
+    flex: 1,
+    alignItems: 'center',
+    backgroundColor: colors.accent,
+    borderRadius: spacing.radiusPill,
+    paddingVertical: 14,
   },
-  deleteText: {
-    color: colors.danger,
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  helper: {
-    color: colors.textSecondary,
-    fontSize: 13,
+  signOutConfirmText: {
+    color: '#fff',
+    fontWeight: '700',
   },
 });
