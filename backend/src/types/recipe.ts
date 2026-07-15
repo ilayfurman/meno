@@ -42,6 +42,63 @@ export const recipeListSchema = z.object({
   recipes: z.array(recipeSchema).min(1),
 });
 
+export const recipeVersionSchema = z.object({
+  id: z.string().uuid().optional(),
+  version_number: z.number().int().min(1),
+  ingredients: z.array(ingredientSchema),
+  steps: z.array(stepSchema),
+  change_note: z.string().nullable(),
+  created_at: z.string().nullable().optional(),
+});
+
+export const storedRecipeSchema = z.object({
+  id: z.string().uuid(),
+  title: z.string(),
+  cuisine: z.string(),
+  servings: z.number().int().min(1),
+  total_time_minutes: z.number().int().min(1),
+  difficulty: z.string(),
+  short_hook: z.string(),
+  dietary_tags: z.array(z.string()),
+  allergen_warnings: z.array(z.string()),
+  video_url: z.string().url().nullable(),
+  video_platform: z.enum(['tiktok', 'instagram', 'youtube', 'other']).nullable(),
+  is_favorite: z.boolean(),
+  current_version: recipeVersionSchema,
+  versions: z.array(recipeVersionSchema),
+});
+
+export const createRecipeSchema = z.object({
+  title: z.string().min(1),
+  cuisine: z.string().min(1),
+  servings: z.number().int().min(1),
+  total_time_minutes: z.number().int().min(1),
+  difficulty: z.string().min(1),
+  short_hook: z.string().default(''),
+  dietary_tags: z.array(z.string()).default([]),
+  allergen_warnings: z.array(z.string()).default([]),
+  video_url: z.string().url().nullable().optional(),
+  ingredients: z.array(ingredientSchema),
+  steps: z.array(stepSchema),
+  change_note: z.string().nullable().optional(),
+  source_type: z.enum(['generated', 'link', 'pdf', 'text']).default('generated'),
+  source_url: z.string().url().nullable().optional(),
+});
+
+export const addRecipeVersionSchema = z.object({
+  ingredients: z.array(ingredientSchema),
+  steps: z.array(stepSchema),
+  change_note: z.string().nullable().optional(),
+  set_as_current: z.boolean().default(true),
+});
+
+export const updateVideoLinkSchema = z.object({
+  video_url: z.string().url().nullable(),
+});
+
+export type StoredRecipe = z.infer<typeof storedRecipeSchema>;
+export type RecipeVersion = z.infer<typeof recipeVersionSchema>;
+
 export const recipeSummarySchema = z.object({
   id: z.string(),
   title: z.string(),
