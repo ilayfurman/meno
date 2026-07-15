@@ -5,12 +5,16 @@ import { OnboardingDietScreen } from '../screens/OnboardingDietScreen';
 import { OnboardingAllergiesScreen } from '../screens/OnboardingAllergiesScreen';
 import { OnboardingPrefsScreen } from '../screens/OnboardingPrefsScreen';
 import { MainTabsScreen } from '../screens/MainTabsScreen';
-import { ResultsScreen } from '../screens/ResultsScreen';
 import { RecipeDetailScreen } from '../screens/RecipeDetailScreen';
-import { AccountScreen } from '../screens/AccountScreen';
-import { FoodPreferencesScreen } from '../screens/FoodPreferencesScreen';
-import { BillingScreen } from '../screens/BillingScreen';
-import { SupportScreen } from '../screens/SupportScreen';
+import { QuickGenerateScreen } from '../screens/QuickGenerateScreen';
+import { DietaryPreferencesScreen } from '../screens/profile/DietaryPreferencesScreen';
+import { NotificationsScreen } from '../screens/profile/NotificationsScreen';
+import { HelpCenterScreen } from '../screens/profile/HelpCenterScreen';
+import { ContactUsScreen } from '../screens/profile/ContactUsScreen';
+import { RateMenoScreen } from '../screens/profile/RateMenoScreen';
+import { TermsScreen } from '../screens/profile/TermsScreen';
+import { PrivacyScreen } from '../screens/profile/PrivacyScreen';
+import { PlansScreen } from '../screens/profile/PlansScreen';
 import { colors } from '../theme/colors';
 import type { RootStackParamList } from '../types/navigation';
 
@@ -38,12 +42,16 @@ export function AppNavigator({ onboardingComplete }: AppNavigatorProps) {
         ) : null}
 
         <Stack.Screen name="MainTabs" component={MainTabsScreen} options={{ headerShown: false }} />
-        <Stack.Screen name="Results" component={ResultsScreen} options={{ title: '3 Recipes' }} />
-        <Stack.Screen name="RecipeDetail" component={RecipeDetailScreen} options={{ title: 'Recipe Detail' }} />
-        <Stack.Screen name="Account" component={AccountScreen} options={{ title: 'Account' }} />
-        <Stack.Screen name="FoodPreferences" component={FoodPreferencesScreen} options={{ title: 'Food Preferences' }} />
-        <Stack.Screen name="Billing" component={BillingScreen} options={{ title: 'Billing & Plan' }} />
-        <Stack.Screen name="Support" component={SupportScreen} options={{ title: 'Support' }} />
+        <Stack.Screen name="RecipeDetail" component={RecipeDetailScreen} options={{ headerShown: false, presentation: 'modal' }} />
+        <Stack.Screen name="QuickGenerate" component={QuickGenerateScreen} options={{ headerShown: false, presentation: 'modal' }} />
+        <Stack.Screen name="ProfileDietary" component={DietaryPreferencesScreen} options={{ headerShown: false, presentation: 'modal' }} />
+        <Stack.Screen name="ProfileNotifications" component={NotificationsScreen} options={{ headerShown: false, presentation: 'modal' }} />
+        <Stack.Screen name="ProfileHelpCenter" component={HelpCenterScreen} options={{ headerShown: false, presentation: 'modal' }} />
+        <Stack.Screen name="ProfileContactUs" component={ContactUsScreen} options={{ headerShown: false, presentation: 'modal' }} />
+        <Stack.Screen name="ProfileRateMeno" component={RateMenoScreen} options={{ headerShown: false, presentation: 'modal' }} />
+        <Stack.Screen name="ProfileTerms" component={TermsScreen} options={{ headerShown: false, presentation: 'modal' }} />
+        <Stack.Screen name="ProfilePrivacy" component={PrivacyScreen} options={{ headerShown: false, presentation: 'modal' }} />
+        <Stack.Screen name="ProfilePlans" component={PlansScreen} options={{ headerShown: false, presentation: 'modal' }} />
       </Stack.Navigator>
     </NavigationContainer>
   );

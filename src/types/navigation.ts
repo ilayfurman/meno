@@ -1,28 +1,22 @@
-import type { GenerationRequest, Recipe } from './index';
-
 export type MainTabParamList = {
-  Tonight: undefined;
   Cookbook: undefined;
-  Explore: undefined;
   Profile: undefined;
 };
 
 export type RootStackParamList = {
+  MainTabs: undefined;
+  RecipeDetail: { recipeId: string };
+  QuickGenerate: undefined;
+  ProfileDietary: undefined;
+  ProfileNotifications: undefined;
+  ProfileHelpCenter: undefined;
+  ProfileContactUs: undefined;
+  ProfileRateMeno: undefined;
+  ProfileTerms: undefined;
+  ProfilePrivacy: undefined;
+  ProfilePlans: undefined;
+  // retained from onboarding, unrelated to this redesign
   OnboardingDiet: undefined;
   OnboardingAllergies: undefined;
   OnboardingPrefs: undefined;
-  MainTabs: undefined;
-  Results: { recipes: Recipe[]; requestId: string; request: GenerationRequest };
-  RecipeDetail: {
-    recipe: Recipe;
-    requestId: string;
-    request: GenerationRequest;
-    listIndex?: number;
-    runId?: string;
-    sourceRecipeId?: string;
-  };
-  Account: undefined;
-  FoodPreferences: undefined;
-  Billing: undefined;
-  Support: undefined;
 };
