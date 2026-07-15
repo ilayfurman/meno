@@ -4,7 +4,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import { BottomSheet } from './BottomSheet';
 import { SegmentedControl } from './SegmentedControl';
 import { PressableScale } from './PressableScale';
-import { importRecipeFromUrlViaBackend } from '../api/backend';
+import { importRecipeFromPdfViaBackend, importRecipeFromTextViaBackend, importRecipeFromUrlViaBackend } from '../api/backend';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
 import type { StoredRecipe } from '../types';
@@ -22,7 +22,7 @@ export function ImportRecipeSheet({ visible, onDismiss, onImported }: ImportReci
   const [segment, setSegment] = useState<ImportSegment>('link');
   const [linkValue, setLinkValue] = useState('');
   const [textValue, setTextValue] = useState('');
-  const [pdfFilename, setPdfFilename] = useState<string | null>(null);
+  const [pdfFile, setPdfFile] = useState<{ uri: string; name: string } | null>(null);
   const [status, setStatus] = useState<ImportStatus>('idle');
   const [error, setError] = useState<string | null>(null);
   const [importedRecipe, setImportedRecipe] = useState<StoredRecipe | null>(null);
@@ -31,7 +31,7 @@ export function ImportRecipeSheet({ visible, onDismiss, onImported }: ImportReci
     setSegment('link');
     setLinkValue('');
     setTextValue('');
-    setPdfFilename(null);
+    setPdfFile(null);
     setStatus('idle');
     setError(null);
     setImportedRecipe(null);
@@ -45,22 +45,30 @@ export function ImportRecipeSheet({ visible, onDismiss, onImported }: ImportReci
   const handlePickPdf = async () => {
     const result = await DocumentPicker.getDocumentAsync({ type: 'application/pdf' });
     if (!result.canceled && result.assets?.[0]) {
-      setPdfFilename(result.assets[0].name);
+      setPdfFile({ uri: result.assets[0].uri, name: result.assets[0].name });
     }
   };
 
   const handleSubmit = async () => {
-    if (segment === 'pdf' || segment === 'text') {
-      setError('Text and PDF import are coming soon — try a link for now.');
+    if (segment === 'link' && !linkValue.trim()) {
       return;
     }
-    if (!linkValue.trim()) {
+    if (segment === 'pdf' && !pdfFile) {
       return;
     }
+    if (segment === 'text' && !textValue.trim()) {
+      return;
+    }
+
     setStatus('processing');
     setError(null);
     try {
-      const recipe = await importRecipeFromUrlViaBackend(linkValue.trim());
+      const recipe =
+        segment === 'link'
+          ? await importRecipeFromUrlViaBackend(linkValue.trim())
+          : segment === 'pdf' && pdfFile
+            ? await importRecipeFromPdfViaBackend(pdfFile)
+            : await importRecipeFromTextViaBackend(textValue.trim());
       setImportedRecipe(recipe);
       setStatus('done');
     } catch (err) {
@@ -115,7 +123,7 @@ export function ImportRecipeSheet({ visible, onDismiss, onImported }: ImportReci
             />
           ) : segment === 'pdf' ? (
             <PressableScale onPress={handlePickPdf} style={styles.dropZone}>
-              <Text style={styles.dropZoneText}>{pdfFilename ?? '+ Choose a PDF'}</Text>
+              <Text style={styles.dropZoneText}>{pdfFile?.name ?? '+ Choose a PDF'}</Text>
             </PressableScale>
           ) : (
             <TextInput

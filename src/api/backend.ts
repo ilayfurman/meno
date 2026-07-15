@@ -51,10 +51,13 @@ async function backendFetch<T>(
   } = {},
 ): Promise<T> {
   ensureConfigured();
+  const isFormData = init.body instanceof FormData;
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
     'x-dev-clerk-user-id': DEV_CLERK_USER_ID,
   };
+  if (!isFormData) {
+    headers['Content-Type'] = 'application/json';
+  }
   if (init.idempotencyKey) {
     headers['Idempotency-Key'] = init.idempotencyKey;
   }
@@ -62,7 +65,7 @@ async function backendFetch<T>(
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: init.method ?? 'GET',
     headers,
-    body: init.body ? JSON.stringify(init.body) : undefined,
+    body: isFormData ? (init.body as FormData) : init.body ? JSON.stringify(init.body) : undefined,
     signal: init.signal,
   });
 
@@ -162,6 +165,28 @@ export async function importRecipeFromUrlViaBackend(url: string): Promise<Stored
   const data = await backendFetch<{ recipe: StoredRecipe }>('/v1/recipes/import-url', {
     method: 'POST',
     body: { url },
+  });
+  return data.recipe;
+}
+
+export async function importRecipeFromTextViaBackend(text: string): Promise<StoredRecipe> {
+  const data = await backendFetch<{ recipe: StoredRecipe }>('/v1/recipes/import-text', {
+    method: 'POST',
+    body: { text },
+  });
+  return data.recipe;
+}
+
+export async function importRecipeFromPdfViaBackend(file: { uri: string; name: string }): Promise<StoredRecipe> {
+  const form = new FormData();
+  form.append('file', {
+    uri: file.uri,
+    name: file.name,
+    type: 'application/pdf',
+  } as unknown as Blob);
+  const data = await backendFetch<{ recipe: StoredRecipe }>('/v1/recipes/import-pdf', {
+    method: 'POST',
+    body: form,
   });
   return data.recipe;
 }
