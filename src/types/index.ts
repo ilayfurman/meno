@@ -119,6 +119,42 @@ export interface RecipeSummary {
   allergen_warnings: string[];
 }
 
+export interface RecipeVersion {
+  id?: string;
+  version_number: number;
+  ingredients: Ingredient[];
+  steps: RecipeStep[];
+  change_note: string | null;
+  created_at?: string | null;
+}
+
+export type VideoPlatform = 'tiktok' | 'instagram' | 'youtube' | 'other';
+
+export interface StoredRecipe {
+  id: string;
+  title: string;
+  cuisine: string;
+  servings: number;
+  total_time_minutes: number;
+  difficulty: string;
+  short_hook: string;
+  dietary_tags: string[];
+  allergen_warnings: string[];
+  video_url: string | null;
+  video_platform: VideoPlatform | null;
+  is_favorite: boolean;
+  current_version: RecipeVersion;
+  versions: RecipeVersion[];
+}
+
+export interface UserPreferencesV2 {
+  diet: string | null;
+  avoid: string[];
+  notify_recipe_saved: boolean;
+  notify_weekly_digest: boolean;
+  notify_product_updates: boolean;
+}
+
 export interface GeneratedRecipeRun {
   id: string;
   createdAt: number;

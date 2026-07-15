@@ -1,4 +1,13 @@
-import type { GenerationRequest, Recipe, RecipeSummary, UserPreferences } from '../types';
+import type {
+  GenerationRequest,
+  Ingredient,
+  Recipe,
+  RecipeStep,
+  RecipeSummary,
+  StoredRecipe,
+  UserPreferences,
+  UserPreferencesV2,
+} from '../types';
 import { API_BASE_URL, DEV_CLERK_USER_ID, USE_BACKEND_GENERATION } from '../config/env';
 
 interface BackendGenerateRequest {
@@ -35,7 +44,7 @@ function ensureConfigured() {
 async function backendFetch<T>(
   path: string,
   init: {
-    method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+    method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
     body?: unknown;
     idempotencyKey?: string;
     signal?: AbortSignal;
@@ -117,17 +126,86 @@ export async function askAgentViaBackend(question: string, recipes: Recipe[]): P
   return data.answer;
 }
 
-export async function getCookbookViaBackend(): Promise<Recipe[]> {
-  const data = await backendFetch<{ recipes: Recipe[] }>('/v1/cookbook');
+export async function getCookbookViaBackend(): Promise<StoredRecipe[]> {
+  const data = await backendFetch<{ recipes: StoredRecipe[] }>('/v1/cookbook');
   return data.recipes;
 }
 
-export async function saveRecipeViaBackend(recipe: Recipe): Promise<boolean> {
-  const data = await backendFetch<{ saved: boolean }>('/v1/cookbook/items', {
+export async function getRecipeViaBackend(recipeId: string): Promise<StoredRecipe> {
+  const data = await backendFetch<{ recipe: StoredRecipe }>(`/v1/recipes/${recipeId}`);
+  return data.recipe;
+}
+
+export interface CreateRecipePayload {
+  title: string;
+  cuisine: string;
+  servings: number;
+  total_time_minutes: number;
+  difficulty: string;
+  short_hook: string;
+  dietary_tags: string[];
+  allergen_warnings: string[];
+  video_url?: string | null;
+  ingredients: Ingredient[];
+  steps: RecipeStep[];
+  change_note?: string | null;
+  source_type: 'generated' | 'link' | 'pdf' | 'text';
+  source_url?: string | null;
+}
+
+export async function createRecipeViaBackend(payload: CreateRecipePayload): Promise<StoredRecipe> {
+  const data = await backendFetch<{ recipe: StoredRecipe }>('/v1/recipes', { method: 'POST', body: payload });
+  return data.recipe;
+}
+
+export async function importRecipeFromUrlViaBackend(url: string): Promise<StoredRecipe> {
+  const data = await backendFetch<{ recipe: StoredRecipe }>('/v1/recipes/import-url', {
     method: 'POST',
-    body: { recipe },
+    body: { url },
   });
-  return data.saved;
+  return data.recipe;
+}
+
+export async function addRecipeVersionViaBackend(
+  recipeId: string,
+  payload: { ingredients: Ingredient[]; steps: RecipeStep[]; change_note?: string | null; set_as_current: boolean },
+): Promise<StoredRecipe> {
+  const data = await backendFetch<{ recipe: StoredRecipe }>(`/v1/recipes/${recipeId}/versions`, {
+    method: 'POST',
+    body: payload,
+  });
+  return data.recipe;
+}
+
+export async function setCurrentVersionViaBackend(recipeId: string, versionId: string): Promise<StoredRecipe> {
+  const data = await backendFetch<{ recipe: StoredRecipe }>(`/v1/recipes/${recipeId}/current-version`, {
+    method: 'PATCH',
+    body: { version_id: versionId },
+  });
+  return data.recipe;
+}
+
+export async function deleteRecipeVersionViaBackend(
+  recipeId: string,
+  versionId: string,
+): Promise<{ deletedRecipe: boolean; recipe: StoredRecipe | null }> {
+  return backendFetch(`/v1/recipes/${recipeId}/versions/${versionId}`, { method: 'DELETE' });
+}
+
+export async function deleteRecipeViaBackend(recipeId: string): Promise<void> {
+  await backendFetch(`/v1/recipes/${recipeId}`, { method: 'DELETE' });
+}
+
+export async function setVideoLinkViaBackend(recipeId: string, videoUrl: string | null): Promise<StoredRecipe> {
+  const data = await backendFetch<{ recipe: StoredRecipe }>(`/v1/recipes/${recipeId}/video-link`, {
+    method: 'PUT',
+    body: { video_url: videoUrl },
+  });
+  return data.recipe;
+}
+
+export async function setFavoriteViaBackend(recipeId: string, isFavorite: boolean): Promise<void> {
+  await backendFetch(`/v1/cookbook/items/${recipeId}/favorite`, { method: 'PUT', body: { is_favorite: isFavorite } });
 }
 
 export async function removeRecipeViaBackend(recipeId: string): Promise<void> {
@@ -141,4 +219,14 @@ export async function reorderCookbookViaBackend(recipeIds: string[]): Promise<vo
     method: 'PATCH',
     body: { recipeIds },
   });
+}
+
+export async function getPreferencesViaBackend(): Promise<{ preferences: UserPreferencesV2; plan: string }> {
+  return backendFetch('/v1/preferences');
+}
+
+export async function updatePreferencesViaBackend(
+  update: Partial<UserPreferencesV2>,
+): Promise<{ preferences: UserPreferencesV2 }> {
+  return backendFetch('/v1/preferences', { method: 'PATCH', body: update });
 }
