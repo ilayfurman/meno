@@ -5,12 +5,6 @@ import { AppNavigator } from './src/navigation/AppNavigator';
 import { AppContextProvider } from './src/navigation/AppContext';
 import { defaultPreferences, getPreferences, savePreferences } from './src/storage/preferences';
 import { defaultBilling, defaultUserProfile, getBilling, getUserProfile, saveBilling, saveUserProfile } from './src/storage/account';
-import {
-  flushCookbookOutbox,
-  removeRecipeFromCookbook,
-  saveRecipeRevision as saveRecipeRevisionToCookbook,
-  saveRecipeToCookbook,
-} from './src/storage/cookbook';
 import { generateFullRecipeFromSummary, generateRecipeSummaries } from './src/ai/openai';
 import { generateRecipeSummariesViaBackend, hydrateRecipeViaBackend, isBackendEnabled } from './src/api/backend';
 import type { BillingInfo, GeneratedRecipeRun, GenerationRequest, Recipe, UserPreferences, UserProfile } from './src/types';
@@ -33,7 +27,6 @@ export default function App() {
       setPreferencesState(prefs);
       setUserProfileState(profile);
       setBillingState(billingData);
-      void flushCookbookOutbox();
     });
   }, []);
 
@@ -53,27 +46,10 @@ export default function App() {
     void saveBilling(next);
   };
 
-  const saveRecipe = async (recipe: Recipe) => {
-    return saveRecipeToCookbook(recipe);
-  };
-
-  const removeRecipe = async (recipeId: string) => {
-    await removeRecipeFromCookbook(recipeId);
-  };
-
   const cancelActiveGeneration = () => {
     generationAbortRef.current?.abort();
     generationAbortRef.current = null;
     setIsGenerating(false);
-  };
-
-  const saveRecipeRevision = async (params: {
-    baseRecipeId: string;
-    revisedRecipe: Recipe;
-    replaceBase?: boolean;
-    changeNote?: string;
-  }) => {
-    return saveRecipeRevisionToCookbook(params);
   };
 
   const addGeneratedRun = (run: GeneratedRecipeRun) => {
@@ -348,9 +324,6 @@ export default function App() {
       setRunRecipeError,
       removeGeneratedRun,
       removeRecipeFromGeneratedRun,
-      saveRecipe,
-      saveRecipeRevision,
-      removeRecipe,
     }),
     [preferences, userProfile, billing, generatedRuns, isGenerating],
   );
