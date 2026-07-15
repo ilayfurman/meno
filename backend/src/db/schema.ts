@@ -18,8 +18,18 @@ export const users = pgTable('users', {
   clerkUserId: text('clerk_user_id').notNull().unique(),
   email: text('email'),
   name: text('name'),
+  plan: varchar('plan', { length: 16 }).notNull().default('free'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+});
+
+export const userPreferences = pgTable('user_preferences', {
+  userId: uuid('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
+  diet: varchar('diet', { length: 32 }),
+  avoid: jsonb('avoid').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+  notifyRecipeSaved: boolean('notify_recipe_saved').notNull().default(true),
+  notifyWeeklyDigest: boolean('notify_weekly_digest').notNull().default(false),
+  notifyProductUpdates: boolean('notify_product_updates').notNull().default(false),
 });
 
 export const recipes = pgTable(
@@ -35,9 +45,9 @@ export const recipes = pgTable(
     shortHook: text('short_hook').notNull(),
     dietaryTags: jsonb('dietary_tags').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
     allergenWarnings: jsonb('allergen_warnings').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
-    ingredients: jsonb('ingredients').notNull(),
-    steps: jsonb('steps').notNull(),
-    substitutions: jsonb('substitutions').notNull(),
+    currentVersionId: uuid('current_version_id'),
+    videoUrl: text('video_url'),
+    videoPlatform: varchar('video_platform', { length: 16 }),
     sourceType: varchar('source_type', { length: 32 }).notNull().default('generated'),
     sourceUrl: text('source_url'),
     sourceDomain: text('source_domain'),
@@ -52,6 +62,23 @@ export const recipes = pgTable(
   }),
 );
 
+export const recipeVersions = pgTable(
+  'recipe_versions',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    recipeId: uuid('recipe_id').notNull().references(() => recipes.id, { onDelete: 'cascade' }),
+    versionNumber: integer('version_number').notNull(),
+    ingredients: jsonb('ingredients').notNull(),
+    steps: jsonb('steps').notNull(),
+    changeNote: text('change_note'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    recipeVersionUnique: unique('recipe_versions_recipe_version_unique').on(table.recipeId, table.versionNumber),
+    recipeIdIdx: index('recipe_versions_recipe_id_idx').on(table.recipeId),
+  }),
+);
+
 export const cookbookItems = pgTable(
   'cookbook_items',
   {
@@ -62,6 +89,7 @@ export const cookbookItems = pgTable(
     savedAt: timestamp('saved_at', { withTimezone: true }).notNull().defaultNow(),
     notes: text('notes'),
     isArchived: boolean('is_archived').notNull().default(false),
+    isFavorite: boolean('is_favorite').notNull().default(false),
   },
   (table) => ({
     userOrderIdx: index('cookbook_items_user_order_idx').on(table.userId, table.orderIndex),
