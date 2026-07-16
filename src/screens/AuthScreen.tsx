@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSignIn, useSignUp } from '@clerk/expo';
 import { PressableScale } from '../components/PressableScale';
+import { CodeInput } from '../components/CodeInput';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
 import { fontFamily } from '../theme/fonts';
@@ -16,36 +18,50 @@ export function AuthScreen() {
   const [mode, setMode] = useState<Mode>('signup');
   const signUpFlow = useSignUp();
   const signInFlow = useSignIn();
+  const insets = useSafeAreaInsets();
 
   return (
-    <KeyboardAvoidingView
-      style={styles.screen}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <Text style={styles.title}>Welcome to Meno</Text>
-        <Text style={styles.subtitle}>
-          {mode === 'signup' ? 'Create an account to save your cookbook' : 'Sign in to sync your cookbook'}
-        </Text>
+    <View style={styles.screen}>
+      {/* Two soft, oversized color washes behind everything — purely
+          decorative, gives the canvas some warmth instead of flat gray. */}
+      <View pointerEvents="none" style={styles.blobTopRight} />
+      <View pointerEvents="none" style={styles.blobBottomLeft} />
 
-        <View style={styles.modeTrack}>
-          <PressableScale onPress={() => setMode('signup')} style={styles.modeItem}>
-            <View style={[styles.modeOption, mode === 'signup' && styles.modeOptionActive]}>
-              <Text style={[styles.modeLabel, mode === 'signup' && styles.modeLabelActive]}>Create account</Text>
-            </View>
-          </PressableScale>
-          <PressableScale onPress={() => setMode('signin')} style={styles.modeItem}>
-            <View style={[styles.modeOption, mode === 'signin' && styles.modeOptionActive]}>
-              <Text style={[styles.modeLabel, mode === 'signin' && styles.modeLabelActive]}>Sign in</Text>
-            </View>
-          </PressableScale>
-        </View>
+      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView
+          contentContainerStyle={[styles.content, { paddingTop: Math.max(insets.top, 24) + 20 }]}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={styles.brandMark}>
+            <Text style={styles.brandMarkText}>M</Text>
+          </View>
 
-        <View style={styles.card}>
-          {mode === 'signup' ? <SignUpCard flow={signUpFlow} /> : <SignInCard flow={signInFlow} />}
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+          <Text style={styles.title}>Welcome to Meno</Text>
+          <Text style={styles.subtitle}>
+            {mode === 'signup' ? 'Create an account to save your cookbook' : 'Sign in to sync your cookbook'}
+          </Text>
+
+          <View style={styles.modeTrack}>
+            <PressableScale onPress={() => setMode('signup')} style={styles.modeItem}>
+              <View style={[styles.modeOption, mode === 'signup' && styles.modeOptionActive]}>
+                <Text style={[styles.modeLabel, mode === 'signup' && styles.modeLabelActive]}>Create account</Text>
+              </View>
+            </PressableScale>
+            <PressableScale onPress={() => setMode('signin')} style={styles.modeItem}>
+              <View style={[styles.modeOption, mode === 'signin' && styles.modeOptionActive]}>
+                <Text style={[styles.modeLabel, mode === 'signin' && styles.modeLabelActive]}>Sign in</Text>
+              </View>
+            </PressableScale>
+          </View>
+
+          <View style={styles.card}>
+            {mode === 'signup' ? <SignUpCard flow={signUpFlow} /> : <SignInCard flow={signInFlow} />}
+          </View>
+
+          <Text style={styles.footerText}>No passwords — we email you a one-time code instead.</Text>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
@@ -58,6 +74,7 @@ type SignInFlow = ReturnType<typeof useSignIn>;
 function SignUpCard({ flow }: { flow: SignUpFlow }) {
   const { signUp, errors, fetchStatus } = flow;
   const [emailAddress, setEmailAddress] = useState('');
+  const [emailFocused, setEmailFocused] = useState(false);
   const [code, setCode] = useState('');
   const [generalError, setGeneralError] = useState<string | null>(null);
   const [awaitingCode, setAwaitingCode] = useState(false);
@@ -102,22 +119,21 @@ function SignUpCard({ flow }: { flow: SignUpFlow }) {
   if (awaitingCode) {
     return (
       <>
+        <View style={styles.envelopeBadge}>
+          <Text style={styles.envelopeBadgeText}>✉</Text>
+        </View>
         <Text style={styles.cardTitle}>Check your email</Text>
-        <Text style={styles.cardSubtitle}>Enter the code we just sent to {emailAddress}</Text>
+        <Text style={styles.cardSubtitle}>Enter the code we just sent to{'\n'}{emailAddress}</Text>
 
-        <Text style={styles.label}>Verification code</Text>
-        <TextInput
-          value={code}
-          onChangeText={setCode}
-          placeholder="123456"
-          keyboardType="number-pad"
-          style={styles.input}
-        />
+        <CodeInput value={code} onChangeText={setCode} autoFocus />
         {errors.fields.code ? <Text style={styles.errorText}>{errors.fields.code.message}</Text> : null}
         {generalError ? <Text style={styles.errorText}>{generalError}</Text> : null}
 
-        <PressableScale onPress={handleVerify} style={styles.primaryButton}>
-          {isFetching ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Verify</Text>}
+        <PressableScale
+          onPress={handleVerify}
+          style={[styles.primaryButton, (code.length < 6 || isFetching) && styles.primaryButtonDisabled]}
+        >
+          {isFetching ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Verify  →</Text>}
         </PressableScale>
         <PressableScale onPress={() => signUp.verifications.sendEmailCode()} style={styles.ghostButton}>
           <Text style={styles.ghostButtonText}>Resend code</Text>
@@ -132,10 +148,13 @@ function SignUpCard({ flow }: { flow: SignUpFlow }) {
       <TextInput
         value={emailAddress}
         onChangeText={setEmailAddress}
+        onFocus={() => setEmailFocused(true)}
+        onBlur={() => setEmailFocused(false)}
         placeholder="you@example.com"
+        placeholderTextColor={colors.subtext}
         autoCapitalize="none"
         keyboardType="email-address"
-        style={styles.input}
+        style={[styles.input, emailFocused && styles.inputFocused]}
       />
       {errors.fields.emailAddress ? <Text style={styles.errorText}>{errors.fields.emailAddress.message}</Text> : null}
       {generalError ? <Text style={styles.errorText}>{generalError}</Text> : null}
@@ -144,7 +163,7 @@ function SignUpCard({ flow }: { flow: SignUpFlow }) {
         onPress={handleSubmit}
         style={[styles.primaryButton, (!emailAddress || isFetching) && styles.primaryButtonDisabled]}
       >
-        {isFetching ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Send code</Text>}
+        {isFetching ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Send code  →</Text>}
       </PressableScale>
 
       {/* Required by Clerk's bot sign-up protection when enabled in the dashboard. */}
@@ -156,6 +175,7 @@ function SignUpCard({ flow }: { flow: SignUpFlow }) {
 function SignInCard({ flow }: { flow: SignInFlow }) {
   const { signIn, errors, fetchStatus } = flow;
   const [emailAddress, setEmailAddress] = useState('');
+  const [emailFocused, setEmailFocused] = useState(false);
   const [code, setCode] = useState('');
   const [generalError, setGeneralError] = useState<string | null>(null);
   // 'verify' is the normal first-factor email code; 'trust' is the rarer
@@ -214,22 +234,21 @@ function SignInCard({ flow }: { flow: SignInFlow }) {
   if (stage === 'verify' || stage === 'trust') {
     return (
       <>
+        <View style={styles.envelopeBadge}>
+          <Text style={styles.envelopeBadgeText}>✉</Text>
+        </View>
         <Text style={styles.cardTitle}>{stage === 'trust' ? 'Verify it’s you' : 'Check your email'}</Text>
-        <Text style={styles.cardSubtitle}>Enter the code we just sent to {emailAddress}</Text>
+        <Text style={styles.cardSubtitle}>Enter the code we just sent to{'\n'}{emailAddress}</Text>
 
-        <Text style={styles.label}>Verification code</Text>
-        <TextInput
-          value={code}
-          onChangeText={setCode}
-          placeholder="123456"
-          keyboardType="number-pad"
-          style={styles.input}
-        />
+        <CodeInput value={code} onChangeText={setCode} autoFocus />
         {errors.fields.code ? <Text style={styles.errorText}>{errors.fields.code.message}</Text> : null}
         {generalError ? <Text style={styles.errorText}>{generalError}</Text> : null}
 
-        <PressableScale onPress={stage === 'trust' ? handleVerifyTrust : handleVerifyCode} style={styles.primaryButton}>
-          {isFetching ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Verify</Text>}
+        <PressableScale
+          onPress={stage === 'trust' ? handleVerifyTrust : handleVerifyCode}
+          style={[styles.primaryButton, (code.length < 6 || isFetching) && styles.primaryButtonDisabled]}
+        >
+          {isFetching ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Verify  →</Text>}
         </PressableScale>
         <PressableScale
           onPress={() => {
@@ -250,10 +269,13 @@ function SignInCard({ flow }: { flow: SignInFlow }) {
       <TextInput
         value={emailAddress}
         onChangeText={setEmailAddress}
+        onFocus={() => setEmailFocused(true)}
+        onBlur={() => setEmailFocused(false)}
         placeholder="you@example.com"
+        placeholderTextColor={colors.subtext}
         autoCapitalize="none"
         keyboardType="email-address"
-        style={styles.input}
+        style={[styles.input, emailFocused && styles.inputFocused]}
       />
       {errors.fields.identifier ? <Text style={styles.errorText}>{errors.fields.identifier.message}</Text> : null}
       {generalError ? <Text style={styles.errorText}>{generalError}</Text> : null}
@@ -262,28 +284,70 @@ function SignInCard({ flow }: { flow: SignInFlow }) {
         onPress={handleSendCode}
         style={[styles.primaryButton, (!emailAddress || isFetching) && styles.primaryButtonDisabled]}
       >
-        {isFetching ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Send code</Text>}
+        {isFetching ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Send code  →</Text>}
       </PressableScale>
     </>
   );
 }
 
+const BLOB_SIZE = 320;
+
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: colors.canvas,
+    overflow: 'hidden',
+  },
+  flex: {
+    flex: 1,
+  },
+  blobTopRight: {
+    position: 'absolute',
+    top: -BLOB_SIZE * 0.55,
+    right: -BLOB_SIZE * 0.45,
+    width: BLOB_SIZE,
+    height: BLOB_SIZE,
+    borderRadius: BLOB_SIZE / 2,
+    backgroundColor: colors.accent,
+    opacity: 0.1,
+  },
+  blobBottomLeft: {
+    position: 'absolute',
+    bottom: -BLOB_SIZE * 0.6,
+    left: -BLOB_SIZE * 0.5,
+    width: BLOB_SIZE,
+    height: BLOB_SIZE,
+    borderRadius: BLOB_SIZE / 2,
+    backgroundColor: colors.accent2,
+    opacity: 0.1,
   },
   content: {
     flexGrow: 1,
     justifyContent: 'center',
     paddingHorizontal: spacing.screenPadding,
-    paddingVertical: 40,
+    paddingBottom: 40,
+  },
+  brandMark: {
+    alignSelf: 'center',
+    width: 56,
+    height: 56,
+    borderRadius: 18,
+    backgroundColor: colors.foreground,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 18,
+    ...elevation.raised,
+  },
+  brandMarkText: {
+    color: '#fff',
+    fontFamily: fontFamily.extraBold,
+    fontSize: 24,
   },
   title: {
     fontFamily: fontFamily.extraBold,
     color: colors.foreground,
-    fontSize: 28,
-    letterSpacing: -0.5,
+    fontSize: 29,
+    letterSpacing: -0.6,
     textAlign: 'center',
   },
   subtitle: {
@@ -291,7 +355,7 @@ const styles = StyleSheet.create({
     fontSize: 13.5,
     textAlign: 'center',
     marginTop: 6,
-    marginBottom: 24,
+    marginBottom: 28,
   },
   modeTrack: {
     flexDirection: 'row',
@@ -324,20 +388,37 @@ const styles = StyleSheet.create({
   },
   card: {
     backgroundColor: '#fff',
-    borderRadius: spacing.radiusCard,
-    padding: 20,
+    borderRadius: spacing.radiusSheet,
+    padding: 22,
     ...elevation.raised,
+  },
+  envelopeBadge: {
+    alignSelf: 'center',
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    backgroundColor: colors.canvas,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+  envelopeBadgeText: {
+    fontSize: 20,
+    color: colors.accent,
   },
   cardTitle: {
     fontFamily: fontFamily.extraBold,
     color: colors.foreground,
-    fontSize: 18,
+    fontSize: 19,
+    textAlign: 'center',
   },
   cardSubtitle: {
     color: colors.subtext,
     fontSize: 13,
-    marginTop: 4,
-    marginBottom: 16,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginTop: 5,
+    marginBottom: 22,
   },
   label: {
     color: colors.subtext,
@@ -345,32 +426,40 @@ const styles = StyleSheet.create({
     fontFamily: fontFamily.bold,
     letterSpacing: 0.6,
     textTransform: 'uppercase',
-    marginTop: 14,
+    marginTop: 2,
     marginBottom: 6,
   },
   input: {
     backgroundColor: colors.canvas,
     borderRadius: spacing.radiusCard,
     paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingVertical: 13,
     fontSize: 14.5,
     color: colors.foreground,
+    borderWidth: 1.5,
+    borderColor: 'transparent',
+  },
+  inputFocused: {
+    borderColor: colors.accent,
+    backgroundColor: '#fff',
   },
   errorText: {
     color: colors.danger,
     fontSize: 12.5,
-    marginTop: 6,
+    marginTop: 8,
   },
   primaryButton: {
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.accent,
     borderRadius: spacing.radiusPill,
-    paddingVertical: 14,
+    paddingVertical: 15,
     marginTop: 20,
+    ...elevation.card,
   },
   primaryButtonDisabled: {
-    opacity: 0.6,
+    opacity: 0.45,
   },
   primaryButtonText: {
     color: '#fff',
@@ -386,5 +475,11 @@ const styles = StyleSheet.create({
     color: colors.subtext,
     fontFamily: fontFamily.bold,
     fontSize: 13,
+  },
+  footerText: {
+    color: colors.subtext,
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 22,
   },
 });
