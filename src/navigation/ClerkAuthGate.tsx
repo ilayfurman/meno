@@ -3,6 +3,7 @@ import { ActivityIndicator, View } from 'react-native';
 import { useAuth, useClerk } from '@clerk/expo';
 import { AuthScreen } from '../screens/AuthScreen';
 import { AuthCapabilityProvider } from './AuthCapabilityContext';
+import { BiometricLockGate } from './BiometricLockGate';
 
 // Only rendered when a Clerk Publishable Key is configured (see App.tsx),
 // so it's always safe to call Clerk's hooks here — this component only
@@ -25,7 +26,7 @@ export function ClerkAuthGate({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthCapabilityProvider value={{ clerkEnabled: true, signOut: () => clerk.signOut() }}>
-      {children}
+      <BiometricLockGate>{children}</BiometricLockGate>
     </AuthCapabilityProvider>
   );
 }

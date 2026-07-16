@@ -33,7 +33,13 @@
       "expo-document-picker",
       "expo-font",
       "expo-secure-store",
-      "@clerk/expo"
+      "@clerk/expo",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Meno uses Face ID to unlock the app quickly and securely."
+        }
+      ]
     ]
   }
 }
