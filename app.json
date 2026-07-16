@@ -16,14 +16,21 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.meno.app"
+      "bundleIdentifier": "com.meno.app",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "com.meno.app",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
-      }
+      },
+      "permissions": [
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -40,6 +47,11 @@
           "faceIDPermission": "Meno uses Face ID to unlock the app quickly and securely."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "4322baa3-1c47-41a4-9002-789582bc23df"
+      }
+    }
   }
 }
