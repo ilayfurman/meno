@@ -96,7 +96,6 @@ export function CookbookScreen() {
         contentContainerStyle={styles.gridContent}
         ListHeaderComponent={
           <View>
-            <Text style={styles.kicker}>Cookbook</Text>
             <Text style={styles.title}>Everything you&apos;ve saved &amp; refined</Text>
 
             <View style={styles.searchRow}>
@@ -206,20 +205,12 @@ const styles = StyleSheet.create({
     flex: 1,
     marginBottom: spacing.gridGap,
   },
-  kicker: {
-    fontFamily: typography.sectionKicker.fontFamily,
-    color: colors.accent,
-    fontSize: 11,
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
-    marginTop: 8,
-  },
   title: {
     fontFamily: typography.screenTitle.fontFamily,
     color: colors.foreground,
     fontSize: 28,
     letterSpacing: -0.5,
-    marginTop: 4,
+    marginTop: 14,
     marginBottom: 16,
   },
   searchRow: {

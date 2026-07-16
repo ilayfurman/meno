@@ -40,7 +40,6 @@ export function ProfileScreen() {
   return (
     <View style={styles.screen}>
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.kicker}>Profile</Text>
         <Text style={styles.title}>Your account</Text>
 
         <View style={styles.identityRow}>
@@ -136,20 +135,12 @@ const styles = StyleSheet.create({
     paddingBottom: 120,
     gap: 4,
   },
-  kicker: {
-    fontFamily: typography.sectionKicker.fontFamily,
-    color: colors.accent,
-    fontSize: 11,
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
-    marginTop: 8,
-  },
   title: {
     fontFamily: typography.screenTitle.fontFamily,
     color: colors.foreground,
     fontSize: 28,
     letterSpacing: -0.5,
-    marginTop: 4,
+    marginTop: 14,
     marginBottom: 16,
   },
   identityRow: {
