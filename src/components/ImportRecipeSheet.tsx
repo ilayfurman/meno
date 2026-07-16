@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TextInput, View } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import { BottomSheet } from './BottomSheet';
@@ -26,6 +26,11 @@ export function ImportRecipeSheet({ visible, onDismiss, onImported }: ImportReci
   const [status, setStatus] = useState<ImportStatus>('idle');
   const [error, setError] = useState<string | null>(null);
   const [importedRecipe, setImportedRecipe] = useState<StoredRecipe | null>(null);
+  // Tracks whether the current importedRecipe has already been handed to
+  // onImported, so it's reported exactly once -- as soon as the import
+  // succeeds (so it's already in the Cookbook list behind this sheet, not
+  // just after the sheet closes), and NOT again on dismiss.
+  const reportedRef = useRef(false);
 
   const reset = () => {
     setSegment('link');
@@ -35,9 +40,15 @@ export function ImportRecipeSheet({ visible, onDismiss, onImported }: ImportReci
     setStatus('idle');
     setError(null);
     setImportedRecipe(null);
+    reportedRef.current = false;
   };
 
+  // Covers dismissing any way other than a successful submit already having
+  // reported it -- tapping the scrim or the hardware back button on Android.
   const handleDismiss = () => {
+    if (importedRecipe && !reportedRef.current) {
+      onImported(importedRecipe);
+    }
     onDismiss();
     reset();
   };
@@ -71,18 +82,20 @@ export function ImportRecipeSheet({ visible, onDismiss, onImported }: ImportReci
             : await importRecipeFromTextViaBackend(textValue.trim());
       setImportedRecipe(recipe);
       setStatus('done');
+      // Report it now, while the "Saved to your Cookbook" confirmation is
+      // still showing, so it's already visible in the list behind this
+      // sheet rather than only appearing once the sheet closes.
+      onImported(recipe);
+      reportedRef.current = true;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Import failed.');
       setStatus('idle');
     }
   };
 
-  const handleDone = () => {
-    if (importedRecipe) {
-      onImported(importedRecipe);
-    }
-    handleDismiss();
-  };
+  // Done is just the happy-path close button -- the import was already
+  // reported to onImported as soon as it succeeded, above.
+  const handleDone = handleDismiss;
 
   return (
     <BottomSheet visible={visible} onDismiss={handleDismiss}>
