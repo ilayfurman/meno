@@ -18,8 +18,24 @@ function rowToVersion(row: VersionRow): RecipeVersion {
   };
 }
 
-async function assembleStoredRecipe(recipeRow: RecipeRow, isFavorite: boolean): Promise<StoredRecipe> {
-  const versionRows = await db
+// Accepts either the pool-level `db` or an in-flight transaction's `tx` --
+// this MUST be used when called from inside a transaction callback. Using
+// the outer `db` there queries via a different pooled connection than the
+// one holding the open (uncommitted) transaction, so it can't see rows the
+// transaction just inserted yet (READ COMMITTED visibility is per-session).
+// That's exactly what caused "Recipe X has no versions" right after
+// creation: createRecipeForUser used to call this with the outer `db`
+// while still inside its own transaction.
+async function assembleStoredRecipe(
+  recipeRow: RecipeRow,
+  isFavorite: boolean,
+  // Structural (just the one method we use) rather than `typeof db` --
+  // the transaction callback's `tx` has the same query-builder methods but
+  // isn't assignable to `typeof db` itself (it lacks the `$client` property
+  // drizzle's factory return type carries).
+  executor: Pick<typeof db, 'select'> = db,
+): Promise<StoredRecipe> {
+  const versionRows = await executor
     .select()
     .from(recipeVersions)
     .where(eq(recipeVersions.recipeId, recipeRow.id))
@@ -110,7 +126,7 @@ export async function createRecipeForUser(userId: string, input: CreateRecipeInp
 
     await tx.update(recipes).set({ currentVersionId: versionRow!.id }).where(eq(recipes.id, recipeRow!.id));
 
-    return assembleStoredRecipe({ ...recipeRow!, currentVersionId: versionRow!.id }, false);
+    return assembleStoredRecipe({ ...recipeRow!, currentVersionId: versionRow!.id }, false, tx);
   });
 }
 
