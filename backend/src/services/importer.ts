@@ -72,7 +72,16 @@ function findRecipeNode(nodes: unknown[]): Record<string, unknown> | null {
   return null;
 }
 
-export async function importRecipeFromUrl(url: string, allowedDomains: string[]): Promise<ImportResult> {
+export interface FetchedPage {
+  html: string;
+  hostname: string;
+  url: string;
+}
+
+// Fetches and safety-checks the page only -- no extraction. Shared by both
+// the free JSON-LD path and the AI-extraction fallback below, so the
+// SSRF/size/content-type guards only live in one place.
+export async function fetchRecipePage(url: string, allowedDomains: string[]): Promise<FetchedPage> {
   const parsed = new URL(url);
   if (!isHttpProtocol(parsed.protocol)) {
     throw new Error('Only http/https URLs are allowed.');
@@ -112,10 +121,40 @@ export async function importRecipeFromUrl(url: string, allowedDomains: string[])
     throw new Error('Response exceeded allowed size.');
   }
 
+  return { html, hostname, url: parsed.toString() };
+}
+
+// Strips a page down to plain, readable text so it's cheap to hand to the
+// LLM -- drops script/style/nav/header/footer blocks (boilerplate that
+// wastes tokens and can confuse extraction), then collapses tags and
+// whitespace. Capped well under Groq's context window to keep cost and
+// latency predictable per import.
+const SKIPPED_TAGS = /<(script|style|nav|header|footer|svg|noscript)[^>]*>[\s\S]*?<\/\1>/gi;
+const MAX_EXTRACT_CHARS = 14000;
+
+export function htmlToReadableText(html: string): string {
+  const withoutBoilerplate = html.replace(SKIPPED_TAGS, ' ');
+  const withoutTags = withoutBoilerplate.replace(/<[^>]+>/g, ' ');
+  const decoded = withoutTags
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+  const collapsed = decoded.replace(/\s+/g, ' ').trim();
+  return collapsed.slice(0, MAX_EXTRACT_CHARS);
+}
+
+// Zero-AI-cost path: only works when the page has schema.org Recipe JSON-LD
+// markup (most established recipe sites do). Returns null instead of
+// throwing so callers can fall back to AI extraction on pages that don't.
+export function extractRecipeFromJsonLd(page: FetchedPage): ImportResult | null {
+  const { html, hostname, url } = page;
   const jsonLdNodes = parseJsonLd(html);
   const recipeNode = findRecipeNode(jsonLdNodes);
   if (!recipeNode) {
-    throw new Error('Could not find schema.org Recipe JSON-LD data.');
+    return null;
   }
 
   const ingredientNames = Array.isArray(recipeNode.recipeIngredient)
@@ -155,7 +194,7 @@ export async function importRecipeFromUrl(url: string, allowedDomains: string[])
     substitutions: [],
     dietary_tags: [],
     allergen_warnings: [],
-    source_url: parsed.toString(),
+    source_url: url,
     source_domain: hostname,
   };
 }

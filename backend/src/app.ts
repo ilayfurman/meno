@@ -45,7 +45,7 @@ import {
 } from './services/recipes.js';
 import { getPlan, getPreferences, updatePreferences } from './services/preferences.js';
 import { allowedImportDomains, env } from './config/env.js';
-import { importRecipeFromUrl } from './services/importer.js';
+import { extractRecipeFromJsonLd, fetchRecipePage, htmlToReadableText } from './services/importer.js';
 
 const idempotencyHeaderSchema = z.string().min(8);
 
@@ -537,22 +537,50 @@ export function createApp() {
       return sendValidationError(reply, parsed.error.flatten());
     }
 
-    const imported = await importRecipeFromUrl(parsed.data.url, allowedImportDomains);
+    const page = await fetchRecipePage(parsed.data.url, allowedImportDomains);
+
+    // Free path first: most established recipe sites embed schema.org
+    // Recipe JSON-LD, which we can parse directly with zero AI cost. Only
+    // fall back to the LLM ("read the page and extract the recipe") when
+    // that markup isn't there -- keeps imports fast/free on the sites that
+    // support it while still working on ones that don't.
+    const imported = extractRecipeFromJsonLd(page);
+    if (imported) {
+      const recipe = await createRecipeForUser(request.auth.userId, {
+        title: imported.title,
+        cuisine: imported.cuisine,
+        servings: imported.servings,
+        total_time_minutes: imported.total_time_minutes,
+        difficulty: imported.difficulty,
+        short_hook: imported.short_hook,
+        dietary_tags: imported.dietary_tags,
+        allergen_warnings: imported.allergen_warnings,
+        ingredients: imported.ingredients,
+        steps: imported.steps,
+        source_type: 'link',
+        source_url: imported.source_url,
+      });
+      await saveRecipeToCookbook(request.auth.userId, recipe.id);
+      return { recipe };
+    }
+
+    const pageText = htmlToReadableText(page.html);
+    const extracted = await structureRecipeFromText(pageText);
     const recipe = await createRecipeForUser(request.auth.userId, {
-      title: imported.title,
-      cuisine: imported.cuisine,
-      servings: imported.servings,
-      total_time_minutes: imported.total_time_minutes,
-      difficulty: imported.difficulty,
-      short_hook: imported.short_hook,
-      dietary_tags: imported.dietary_tags,
-      allergen_warnings: imported.allergen_warnings,
-      ingredients: imported.ingredients,
-      steps: imported.steps,
+      ...extracted.recipe,
       source_type: 'link',
-      source_url: imported.source_url,
+      source_url: page.url,
     });
     await saveRecipeToCookbook(request.auth.userId, recipe.id);
+
+    await db.insert(aiUsage).values({
+      userId: request.auth.userId,
+      endpoint: '/v1/recipes/import-url',
+      model: env.GROQ_MODEL,
+      inputTokens: extracted.usage?.prompt_tokens ?? 0,
+      outputTokens: extracted.usage?.completion_tokens ?? 0,
+      costEstimateUsd: '0.000000',
+    });
 
     return { recipe };
   });
