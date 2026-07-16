@@ -42,16 +42,24 @@ export function AuthScreen() {
           </Text>
 
           <View style={styles.modeTrack}>
-            <PressableScale onPress={() => setMode('signup')} style={styles.modeItem}>
-              <View style={[styles.modeOption, mode === 'signup' && styles.modeOptionActive]}>
-                <Text style={[styles.modeLabel, mode === 'signup' && styles.modeLabelActive]}>Create account</Text>
-              </View>
-            </PressableScale>
-            <PressableScale onPress={() => setMode('signin')} style={styles.modeItem}>
-              <View style={[styles.modeOption, mode === 'signin' && styles.modeOptionActive]}>
-                <Text style={[styles.modeLabel, mode === 'signin' && styles.modeLabelActive]}>Sign in</Text>
-              </View>
-            </PressableScale>
+            {/* PressableScale forwards `style` to its inner Animated.View, not
+                the outer Pressable that actually sizes within this row — so
+                flex:1 has to live on a plain wrapping View instead, or the two
+                segments won't split evenly. */}
+            <View style={styles.modeItem}>
+              <PressableScale onPress={() => setMode('signup')}>
+                <View style={[styles.modeOption, mode === 'signup' && styles.modeOptionActive]}>
+                  <Text style={[styles.modeLabel, mode === 'signup' && styles.modeLabelActive]}>Create account</Text>
+                </View>
+              </PressableScale>
+            </View>
+            <View style={styles.modeItem}>
+              <PressableScale onPress={() => setMode('signin')}>
+                <View style={[styles.modeOption, mode === 'signin' && styles.modeOptionActive]}>
+                  <Text style={[styles.modeLabel, mode === 'signin' && styles.modeLabelActive]}>Sign in</Text>
+                </View>
+              </PressableScale>
+            </View>
           </View>
 
           <View style={styles.card}>
