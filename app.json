@@ -31,7 +31,9 @@
     },
     "plugins": [
       "expo-document-picker",
-      "expo-font"
+      "expo-font",
+      "expo-secure-store",
+      "@clerk/expo"
     ]
   }
 }

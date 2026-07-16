@@ -8,7 +8,32 @@ import type {
   UserPreferences,
   UserPreferencesV2,
 } from '../types';
-import { API_BASE_URL, DEV_CLERK_USER_ID, USE_BACKEND_GENERATION } from '../config/env';
+import { API_BASE_URL, CLERK_PUBLISHABLE_KEY, DEV_CLERK_USER_ID, USE_BACKEND_GENERATION } from '../config/env';
+
+// Resolves the auth header for every backend request. When Clerk is
+// configured and a session is active, this sends a real Bearer token —
+// getClerkInstance() works outside of React components/hooks by design, so
+// this plain async function doesn't need to be a hook. Falls back to the
+// dev header (what the backend's authGuard uses when ALLOW_DEV_AUTH is on)
+// whenever Clerk isn't set up yet or there's no session, so nothing breaks
+// before Clerk is configured.
+async function getAuthHeaders(): Promise<Record<string, string>> {
+  if (CLERK_PUBLISHABLE_KEY) {
+    try {
+      // Imported lazily so this module doesn't hard-require @clerk/expo to
+      // have a provider mounted when Clerk isn't configured at all.
+      const { getClerkInstance } = await import('@clerk/expo');
+      const clerk = getClerkInstance();
+      const token = await clerk.session?.getToken();
+      if (token) {
+        return { Authorization: `Bearer ${token}` };
+      }
+    } catch {
+      // Clerk not ready yet, or no active session — fall through to dev auth.
+    }
+  }
+  return { 'x-dev-clerk-user-id': DEV_CLERK_USER_ID };
+}
 
 interface BackendGenerateRequest {
   request: GenerationRequest;
@@ -52,9 +77,7 @@ async function backendFetch<T>(
 ): Promise<T> {
   ensureConfigured();
   const isFormData = init.body instanceof FormData;
-  const headers: Record<string, string> = {
-    'x-dev-clerk-user-id': DEV_CLERK_USER_ID,
-  };
+  const headers: Record<string, string> = await getAuthHeaders();
   if (!isFormData) {
     headers['Content-Type'] = 'application/json';
   }

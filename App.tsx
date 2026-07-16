@@ -2,12 +2,17 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts } from 'expo-font';
+import { ClerkProvider } from '@clerk/expo';
+import { tokenCache } from '@clerk/expo/token-cache';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import { AppContextProvider } from './src/navigation/AppContext';
+import { AuthCapabilityProvider } from './src/navigation/AuthCapabilityContext';
+import { ClerkAuthGate } from './src/navigation/ClerkAuthGate';
 import { defaultPreferences, getPreferences, savePreferences } from './src/storage/preferences';
 import { defaultBilling, defaultUserProfile, getBilling, getUserProfile, saveBilling, saveUserProfile } from './src/storage/account';
 import { generateFullRecipeFromSummary, generateRecipeSummaries } from './src/ai/openai';
 import { generateRecipeSummariesViaBackend, hydrateRecipeViaBackend, isBackendEnabled } from './src/api/backend';
+import { CLERK_PUBLISHABLE_KEY } from './src/config/env';
 import { fontsToLoad } from './src/theme/fonts';
 import { applyGlobalTextDefaults } from './src/theme/globalTextDefaults';
 
@@ -342,10 +347,23 @@ export default function App() {
     );
   }
 
-  return (
+  const appContent = (
     <AppContextProvider value={value}>
       <StatusBar style="dark" />
       <AppNavigator onboardingComplete={preferences.onboardingComplete} />
     </AppContextProvider>
+  );
+
+  // No Clerk key configured yet — keep behaving exactly as before (dev-auth
+  // header, no sign-in screen). Set EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY once a
+  // Clerk app exists to turn on real accounts.
+  if (!CLERK_PUBLISHABLE_KEY) {
+    return <AuthCapabilityProvider value={{ clerkEnabled: false, signOut: null }}>{appContent}</AuthCapabilityProvider>;
+  }
+
+  return (
+    <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY} tokenCache={tokenCache}>
+      <ClerkAuthGate>{appContent}</ClerkAuthGate>
+    </ClerkProvider>
   );
 }

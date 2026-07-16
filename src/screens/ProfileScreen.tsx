@@ -7,6 +7,7 @@ import { BottomSheet } from '../components/BottomSheet';
 import { ProfileSettingsRow } from '../components/ProfileSettingsRow';
 import { getCookbookViaBackend, getPreferencesViaBackend } from '../api/backend';
 import { useAppContext } from '../navigation/AppContext';
+import { useAuthCapability } from '../navigation/AuthCapabilityContext';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
 import { typography } from '../theme/typography';
@@ -17,6 +18,7 @@ import type { RootStackParamList } from '../types/navigation';
 export function ProfileScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { userProfile } = useAppContext();
+  const { signOut } = useAuthCapability();
   const [recipeCount, setRecipeCount] = useState(0);
   const [favoriteCount, setFavoriteCount] = useState(0);
   const [dietSummary, setDietSummary] = useState('Not set');
@@ -110,9 +112,12 @@ export function ProfileScreen() {
             <Text style={styles.signOutCancelText}>Cancel</Text>
           </PressableScale>
           <PressableScale
-            onPress={() => {
-              // No real auth session exists client-side yet (dev-auth only) — wire
-              // this to Clerk's sign-out once client auth is integrated.
+            onPress={async () => {
+              // signOut is null under dev-auth (no Clerk configured yet) —
+              // there's no real session to end in that case.
+              if (signOut) {
+                await signOut();
+              }
               setSignOutOpen(false);
             }}
             style={styles.signOutConfirm}
