@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Animated, Dimensions, Keyboard, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
@@ -14,11 +14,17 @@ export function BottomSheet({ visible, onDismiss, children, maxHeightPercent = 8
   const translateY = useRef(new Animated.Value(Dimensions.get('window').height)).current;
   const opacity = useRef(new Animated.Value(0)).current;
   // KeyboardAvoidingView depends on the Modal's implicit root actually
-  // handing it real flex height to grow into, which isn't reliable --
-  // tried it, the sheet never budged. Tracking the keyboard directly and
-  // animating the sheet's own bottom offset works regardless of whatever
-  // Modal does internally with layout.
+  // handing it real flex height to grow into, which isn't reliable -- tried
+  // it, the sheet never budged. Tracking the keyboard directly works, but
+  // animating it via the `bottom` style prop doesn't mix with translateY's
+  // native-driven transform on the same component ("Style property 'bottom'
+  // is not supported by native animated module"). Native driver only
+  // accelerates transform/opacity, and a component can't have one native-
+  // and one JS-driven animated style at once. Fix: fold the keyboard height
+  // into the SAME transform via Animated.subtract, so it's translateY the
+  // whole way through -- fully native-driven, no separate 'bottom' prop.
   const keyboardOffset = useRef(new Animated.Value(0)).current;
+  const combinedTranslateY = Animated.subtract(translateY, keyboardOffset);
 
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -28,14 +34,14 @@ export function BottomSheet({ visible, onDismiss, children, maxHeightPercent = 8
       Animated.timing(keyboardOffset, {
         toValue: e.endCoordinates.height,
         duration: Platform.OS === 'ios' ? e.duration || 250 : 200,
-        useNativeDriver: false,
+        useNativeDriver: true,
       }).start();
     });
     const hideSub = Keyboard.addListener(hideEvent, (e) => {
       Animated.timing(keyboardOffset, {
         toValue: 0,
         duration: Platform.OS === 'ios' ? e.duration || 250 : 200,
-        useNativeDriver: false,
+        useNativeDriver: true,
       }).start();
     });
 
@@ -68,10 +74,7 @@ export function BottomSheet({ visible, onDismiss, children, maxHeightPercent = 8
         <Pressable style={StyleSheet.absoluteFill} onPress={onDismiss} />
       </Animated.View>
       <Animated.View
-        style={[
-          styles.sheet,
-          { maxHeight: `${maxHeightPercent}%`, transform: [{ translateY }], bottom: keyboardOffset },
-        ]}
+        style={[styles.sheet, { maxHeight: `${maxHeightPercent}%`, transform: [{ translateY: combinedTranslateY }] }]}
       >
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           {children}
