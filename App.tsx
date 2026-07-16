@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useFonts } from 'expo-font';
 import { ClerkProvider } from '@clerk/expo';
 import { tokenCache } from '@clerk/expo/token-cache';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import { AppContextProvider } from './src/navigation/AppContext';
 import { AuthCapabilityProvider } from './src/navigation/AuthCapabilityContext';
@@ -341,9 +342,11 @@ export default function App() {
 
   if (!fontsLoaded || !preferences || !userProfile || !billing) {
     return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator />
-      </View>
+      <SafeAreaProvider>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <ActivityIndicator />
+        </View>
+      </SafeAreaProvider>
     );
   }
 
@@ -358,12 +361,18 @@ export default function App() {
   // header, no sign-in screen). Set EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY once a
   // Clerk app exists to turn on real accounts.
   if (!CLERK_PUBLISHABLE_KEY) {
-    return <AuthCapabilityProvider value={{ clerkEnabled: false, signOut: null }}>{appContent}</AuthCapabilityProvider>;
+    return (
+      <SafeAreaProvider>
+        <AuthCapabilityProvider value={{ clerkEnabled: false, signOut: null }}>{appContent}</AuthCapabilityProvider>
+      </SafeAreaProvider>
+    );
   }
 
   return (
-    <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY} tokenCache={tokenCache}>
-      <ClerkAuthGate>{appContent}</ClerkAuthGate>
-    </ClerkProvider>
+    <SafeAreaProvider>
+      <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY} tokenCache={tokenCache}>
+        <ClerkAuthGate>{appContent}</ClerkAuthGate>
+      </ClerkProvider>
+    </SafeAreaProvider>
   );
 }
