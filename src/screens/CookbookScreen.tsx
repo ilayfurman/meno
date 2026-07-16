@@ -12,6 +12,7 @@ import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
 import { typography } from '../theme/typography';
 import { fontFamily } from '../theme/fonts';
+import { elevation } from '../theme/elevation';
 import type { StoredRecipe } from '../types';
 import type { CookbookFilter, CookbookSortKey } from '../types/cookbook';
 import type { RootStackParamList } from '../types/navigation';
@@ -192,7 +193,7 @@ export function CookbookScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.canvas,
   },
   gridContent: {
     paddingHorizontal: spacing.screenPadding,
@@ -283,10 +284,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: colors.matBackground,
+    backgroundColor: '#fff',
     borderRadius: spacing.radiusCard,
     padding: 16,
     marginBottom: 16,
+    ...elevation.card,
   },
   quickGenerateIcon: {
     fontSize: 22,

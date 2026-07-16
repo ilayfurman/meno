@@ -11,6 +11,7 @@ import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
 import { typography } from '../theme/typography';
 import { fontFamily } from '../theme/fonts';
+import { elevation } from '../theme/elevation';
 import type { RootStackParamList } from '../types/navigation';
 
 export function ProfileScreen() {
@@ -128,7 +129,7 @@ export function ProfileScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.canvas,
   },
   content: {
     paddingHorizontal: spacing.screenPadding,
@@ -186,10 +187,11 @@ const styles = StyleSheet.create({
   },
   statTile: {
     flex: 1,
-    backgroundColor: colors.matBackground,
+    backgroundColor: '#fff',
     borderRadius: spacing.radiusCard,
     paddingVertical: 14,
     alignItems: 'center',
+    ...elevation.card,
   },
   statValue: {
     color: colors.foreground,
@@ -209,6 +211,7 @@ const styles = StyleSheet.create({
     borderRadius: spacing.radiusCard,
     padding: 16,
     marginBottom: 20,
+    ...elevation.raised,
   },
   planName: {
     color: '#fff',
@@ -241,10 +244,10 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   groupedList: {
-    backgroundColor: colors.matBackground,
+    backgroundColor: '#fff',
     borderRadius: 16,
     paddingHorizontal: 14,
-    overflow: 'hidden',
+    ...elevation.card,
   },
   signOutRow: {
     marginTop: 24,

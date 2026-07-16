@@ -6,6 +6,7 @@ import { getPreferencesViaBackend } from '../../api/backend';
 import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
 import { fontFamily } from '../../theme/fonts';
+import { elevation } from '../../theme/elevation';
 
 const plans = [
   {
@@ -78,7 +79,7 @@ export function PlansScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.canvas,
   },
   content: {
     paddingHorizontal: spacing.screenPadding,
@@ -86,13 +87,14 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   card: {
-    borderWidth: 1,
-    borderColor: colors.hairline,
+    backgroundColor: '#fff',
     borderRadius: spacing.radiusCard,
     padding: 16,
     gap: 4,
+    ...elevation.card,
   },
   cardSelected: {
+    borderWidth: 1.5,
     borderColor: colors.accent2,
     backgroundColor: colors.matBackground,
   },

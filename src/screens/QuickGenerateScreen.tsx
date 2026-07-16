@@ -11,6 +11,7 @@ import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
 import { typography } from '../theme/typography';
 import { fontFamily } from '../theme/fonts';
+import { elevation } from '../theme/elevation';
 import type { DifficultyOption, Recipe, TimeOption, VibeOption } from '../types';
 import type { RootStackParamList } from '../types/navigation';
 
@@ -168,7 +169,7 @@ export function QuickGenerateScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.canvas,
   },
   content: {
     padding: spacing.screenPadding,
@@ -206,15 +207,16 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 8,
     borderRadius: spacing.radiusCard,
-    borderWidth: 1,
-    borderColor: colors.hairline,
+    backgroundColor: '#fff',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
+    ...elevation.card,
   },
   vibeTileActive: {
-    borderColor: colors.accent,
     backgroundColor: colors.matBackground,
+    borderWidth: 1.5,
+    borderColor: colors.accent,
   },
   vibeIcon: {
     fontSize: 28,
@@ -283,10 +285,10 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   resultCard: {
-    borderWidth: 1,
-    borderColor: colors.hairline,
+    backgroundColor: '#fff',
     borderRadius: spacing.radiusCard,
     padding: 14,
+    ...elevation.card,
   },
   resultCardHeader: {
     gap: 2,

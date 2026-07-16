@@ -21,7 +21,7 @@ export function PrivacyScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.canvas,
   },
   content: {
     paddingHorizontal: spacing.screenPadding,

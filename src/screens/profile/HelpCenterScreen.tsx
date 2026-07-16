@@ -5,6 +5,7 @@ import { PressableScale } from '../../components/PressableScale';
 import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
 import { fontFamily } from '../../theme/fonts';
+import { elevation } from '../../theme/elevation';
 
 const faqs = [
   { question: 'How do I save a recipe to my cookbook?', answer: 'Tap the + button on the Cookbook screen to import from a link, or save a Quick Generate result directly.' },
@@ -51,7 +52,7 @@ export function HelpCenterScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: colors.canvas,
   },
   content: {
     paddingHorizontal: spacing.screenPadding,
@@ -59,14 +60,14 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   search: {
-    borderWidth: 1,
-    borderColor: colors.hairline,
+    backgroundColor: '#fff',
     borderRadius: spacing.radiusCard,
     paddingHorizontal: 14,
     paddingVertical: 11,
     fontSize: 15,
     color: colors.foreground,
     marginBottom: 12,
+    ...elevation.card,
   },
   faqRow: {
     paddingVertical: 12,
