@@ -7,10 +7,10 @@ import { SearchBar } from '../components/SearchBar';
 import { PressableScale } from '../components/PressableScale';
 import { BottomSheet } from '../components/BottomSheet';
 import { ImportRecipeSheet } from '../components/ImportRecipeSheet';
-import { ScreenHeaderBand } from '../components/ScreenHeaderBand';
 import { getCookbookViaBackend, setFavoriteViaBackend } from '../api/backend';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
+import { typography } from '../theme/typography';
 import { fontFamily } from '../theme/fonts';
 import { elevation } from '../theme/elevation';
 import type { StoredRecipe } from '../types';
@@ -88,7 +88,54 @@ export function CookbookScreen() {
 
   return (
     <View style={styles.screen}>
-      <ScreenHeaderBand kicker="Cookbook" title="Everything you've saved & refined" />
+      {/* Colored band covers the title, search, and filters — everything the
+          user works with before they've committed to a search/filter — then
+          hands off to plain canvas right where the recipe list starts. */}
+      <View style={styles.headerBand}>
+        <Text style={styles.kicker}>Cookbook</Text>
+        <Text style={styles.title}>Everything you&apos;ve saved &amp; refined</Text>
+
+        <View style={styles.searchRow}>
+          <View style={styles.searchInputWrap}>
+            <SearchBar value={searchQuery} onChangeText={setSearchQuery} placeholder="Search your cookbook" />
+          </View>
+          <PressableScale onPress={() => setImportSheetOpen(true)} style={styles.importButton}>
+            <Text style={styles.importButtonText}>+</Text>
+          </PressableScale>
+        </View>
+
+        <View style={styles.filterRow}>
+          <PressableScale
+            onPress={() => setActiveFilter('all')}
+            style={[styles.filterPill, activeFilter === 'all' && styles.filterPillActive]}
+          >
+            <Text style={[styles.filterPillText, activeFilter === 'all' && styles.filterPillTextActive]}>All</Text>
+          </PressableScale>
+          <PressableScale
+            onPress={() => setActiveFilter('favorites')}
+            style={[styles.filterPill, activeFilter === 'favorites' && styles.filterPillActive]}
+          >
+            <Text style={[styles.filterPillText, activeFilter === 'favorites' && styles.filterPillTextActive]}>
+              Favorites
+            </Text>
+          </PressableScale>
+          {cuisines.map((cuisine) => (
+            <PressableScale
+              key={cuisine}
+              onPress={() => setActiveFilter(cuisine)}
+              style={[styles.filterPill, activeFilter === cuisine && styles.filterPillActive]}
+            >
+              <Text style={[styles.filterPillText, activeFilter === cuisine && styles.filterPillTextActive]}>
+                {cuisine}
+              </Text>
+            </PressableScale>
+          ))}
+          <PressableScale onPress={() => setSortSheetOpen(true)} style={styles.sortTrigger}>
+            <Text style={styles.sortTriggerText}>{sortLabel} ⌄</Text>
+          </PressableScale>
+        </View>
+      </View>
+
       <FlatList
         data={visibleRecipes}
         keyExtractor={(item) => item.id}
@@ -96,48 +143,8 @@ export function CookbookScreen() {
         columnWrapperStyle={styles.gridRow}
         contentContainerStyle={styles.gridContent}
         ListHeaderComponent={
-          <View style={styles.listHeader}>
-            <View style={styles.searchRow}>
-              <View style={styles.searchInputWrap}>
-                <SearchBar value={searchQuery} onChangeText={setSearchQuery} placeholder="Search your cookbook" />
-              </View>
-              <PressableScale onPress={() => setImportSheetOpen(true)} style={styles.importButton}>
-                <Text style={styles.importButtonText}>+</Text>
-              </PressableScale>
-            </View>
-
-            <View style={styles.filterRow}>
-              <PressableScale
-                onPress={() => setActiveFilter('all')}
-                style={[styles.filterPill, activeFilter === 'all' && styles.filterPillActive]}
-              >
-                <Text style={[styles.filterPillText, activeFilter === 'all' && styles.filterPillTextActive]}>All</Text>
-              </PressableScale>
-              <PressableScale
-                onPress={() => setActiveFilter('favorites')}
-                style={[styles.filterPill, activeFilter === 'favorites' && styles.filterPillActive]}
-              >
-                <Text style={[styles.filterPillText, activeFilter === 'favorites' && styles.filterPillTextActive]}>
-                  Favorites
-                </Text>
-              </PressableScale>
-              {cuisines.map((cuisine) => (
-                <PressableScale
-                  key={cuisine}
-                  onPress={() => setActiveFilter(cuisine)}
-                  style={[styles.filterPill, activeFilter === cuisine && styles.filterPillActive]}
-                >
-                  <Text style={[styles.filterPillText, activeFilter === cuisine && styles.filterPillTextActive]}>
-                    {cuisine}
-                  </Text>
-                </PressableScale>
-              ))}
-              <PressableScale onPress={() => setSortSheetOpen(true)} style={styles.sortTrigger}>
-                <Text style={styles.sortTriggerText}>{sortLabel} ⌄</Text>
-              </PressableScale>
-            </View>
-
-            {showQuickGenerateCard ? (
+          showQuickGenerateCard ? (
+            <View style={styles.listHeader}>
               <PressableScale onPress={() => navigation.navigate('QuickGenerate')} style={styles.quickGenerateCard}>
                 <Text style={styles.quickGenerateIcon}>✦</Text>
                 <View style={styles.quickGenerateTextWrap}>
@@ -145,8 +152,8 @@ export function CookbookScreen() {
                   <Text style={styles.quickGenerateSubtitle}>Get 3 quick ideas from Meno, right now</Text>
                 </View>
               </PressableScale>
-            ) : null}
-          </View>
+            </View>
+          ) : null
         }
         renderItem={({ item }) => (
           <View style={styles.gridItem}>
@@ -195,6 +202,7 @@ const styles = StyleSheet.create({
   },
   gridContent: {
     paddingHorizontal: spacing.screenPadding,
+    paddingTop: 6,
     paddingBottom: 120,
   },
   gridRow: {
@@ -204,8 +212,39 @@ const styles = StyleSheet.create({
     flex: 1,
     marginBottom: spacing.gridGap,
   },
+  // The band that carries color: title, search, and filters. Rounded bottom
+  // corners + elevation give it a bit of depth over the gray canvas below,
+  // and everything past this point (the quick-generate card, the grid) is
+  // plain — matching where the color/gray line landed in the reference shot.
+  headerBand: {
+    backgroundColor: colors.accent,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+    paddingHorizontal: spacing.screenPadding,
+    paddingTop: 14,
+    paddingBottom: 20,
+    ...elevation.raised,
+  },
+  kicker: {
+    fontFamily: typography.sectionKicker.fontFamily,
+    color: 'rgba(255,255,255,0.72)',
+    fontSize: 11,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  title: {
+    fontFamily: typography.screenTitle.fontFamily,
+    color: '#fff',
+    fontSize: 26,
+    letterSpacing: -0.5,
+    marginTop: 4,
+    marginBottom: 16,
+  },
+  // Pulls the quick-generate card up slightly so it tucks under the band's
+  // rounded corner instead of starting flush below it — the same layered
+  // overlap Rocket Money uses between its header and the first white card.
   listHeader: {
-    paddingTop: 18,
+    marginTop: -14,
   },
   searchRow: {
     flexDirection: 'row',
@@ -233,27 +272,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
-    marginBottom: 16,
     alignItems: 'center',
   },
   filterPill: {
     borderRadius: spacing.radiusPill,
     borderWidth: 1,
-    borderColor: colors.hairline,
+    borderColor: 'rgba(255,255,255,0.4)',
+    backgroundColor: 'rgba(255,255,255,0.14)',
     paddingHorizontal: 14,
     paddingVertical: 8,
   },
   filterPillActive: {
-    backgroundColor: colors.foreground,
-    borderColor: colors.foreground,
+    backgroundColor: '#fff',
+    borderColor: '#fff',
   },
   filterPillText: {
-    color: colors.subtext,
+    color: 'rgba(255,255,255,0.85)',
     fontSize: 13,
     fontFamily: fontFamily.semiBold,
   },
   filterPillTextActive: {
-    color: '#fff',
+    color: colors.accent,
   },
   sortTrigger: {
     marginLeft: 'auto',
@@ -261,7 +300,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   sortTriggerText: {
-    color: colors.subtext,
+    color: 'rgba(255,255,255,0.85)',
     fontSize: 13,
     fontFamily: fontFamily.semiBold,
   },
@@ -273,7 +312,7 @@ const styles = StyleSheet.create({
     borderRadius: spacing.radiusCard,
     padding: 16,
     marginBottom: 16,
-    ...elevation.card,
+    ...elevation.raised,
   },
   quickGenerateIcon: {
     fontSize: 22,
