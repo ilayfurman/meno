@@ -52,29 +52,44 @@ export function AuthScreen() {
 type SignUpFlow = ReturnType<typeof useSignUp>;
 type SignInFlow = ReturnType<typeof useSignIn>;
 
+// Passwordless everywhere: enter your email, we send a 6-digit code, you
+// type it in. No password to set/forget/reset, no "click this link to
+// activate" email round-trip.
 function SignUpCard({ flow }: { flow: SignUpFlow }) {
   const { signUp, errors, fetchStatus } = flow;
   const [emailAddress, setEmailAddress] = useState('');
-  const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
   const [generalError, setGeneralError] = useState<string | null>(null);
+  const [awaitingCode, setAwaitingCode] = useState(false);
   const isFetching = fetchStatus === 'fetching';
 
   const handleSubmit = async () => {
     setGeneralError(null);
-    const { error } = await signUp.password({ emailAddress, password });
+    const { error } = await signUp.create({ emailAddress });
     if (error) {
       setGeneralError(error.message ?? 'Something went wrong. Please try again.');
       return;
     }
-    if (signUp.status === 'missing_requirements' && signUp.unverifiedFields.includes('email_address')) {
-      await signUp.verifications.sendEmailCode();
+    if (signUp.status === 'complete') {
+      await signUp.finalize({ navigate: () => {} });
+      return;
     }
+    const { error: codeError } = await signUp.verifications.sendEmailCode();
+    if (codeError) {
+      setGeneralError(codeError.message ?? 'Could not send a code. Please try again.');
+      return;
+    }
+    setCode('');
+    setAwaitingCode(true);
   };
 
   const handleVerify = async () => {
     setGeneralError(null);
-    await signUp.verifications.verifyEmailCode({ code });
+    const { error } = await signUp.verifications.verifyEmailCode({ code });
+    if (error) {
+      setGeneralError(error.message ?? 'That code didn’t work — check it and try again.');
+      return;
+    }
     if (signUp.status === 'complete') {
       // Finalize activates the session — our top-level auth gate reacts to
       // isSignedIn on its own, so there's nothing for us to navigate to here.
@@ -83,11 +98,6 @@ function SignUpCard({ flow }: { flow: SignUpFlow }) {
       setGeneralError('That code didn’t work — check it and try again.');
     }
   };
-
-  const awaitingCode =
-    signUp.status === 'missing_requirements' &&
-    signUp.unverifiedFields.includes('email_address') &&
-    signUp.missingFields.length === 0;
 
   if (awaitingCode) {
     return (
@@ -128,23 +138,13 @@ function SignUpCard({ flow }: { flow: SignUpFlow }) {
         style={styles.input}
       />
       {errors.fields.emailAddress ? <Text style={styles.errorText}>{errors.fields.emailAddress.message}</Text> : null}
-
-      <Text style={styles.label}>Password</Text>
-      <TextInput
-        value={password}
-        onChangeText={setPassword}
-        placeholder="At least 8 characters"
-        secureTextEntry
-        style={styles.input}
-      />
-      {errors.fields.password ? <Text style={styles.errorText}>{errors.fields.password.message}</Text> : null}
       {generalError ? <Text style={styles.errorText}>{generalError}</Text> : null}
 
       <PressableScale
         onPress={handleSubmit}
-        style={[styles.primaryButton, (!emailAddress || !password || isFetching) && styles.primaryButtonDisabled]}
+        style={[styles.primaryButton, (!emailAddress || isFetching) && styles.primaryButtonDisabled]}
       >
-        {isFetching ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Create account</Text>}
+        {isFetching ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Send code</Text>}
       </PressableScale>
 
       {/* Required by Clerk's bot sign-up protection when enabled in the dashboard. */}
@@ -156,27 +156,39 @@ function SignUpCard({ flow }: { flow: SignUpFlow }) {
 function SignInCard({ flow }: { flow: SignInFlow }) {
   const { signIn, errors, fetchStatus } = flow;
   const [emailAddress, setEmailAddress] = useState('');
-  const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
   const [generalError, setGeneralError] = useState<string | null>(null);
-  const [needsCode, setNeedsCode] = useState(false);
+  // 'verify' is the normal first-factor email code; 'trust' is the rarer
+  // second code Clerk asks for on an unrecognized device (client trust).
+  const [stage, setStage] = useState<'identify' | 'verify' | 'trust'>('identify');
   const isFetching = fetchStatus === 'fetching';
 
-  const handleSubmit = async () => {
+  const handleSendCode = async () => {
     setGeneralError(null);
-    const { error } = await signIn.password({ emailAddress, password });
+    const { error } = await signIn.emailCode.sendCode({ emailAddress });
     if (error) {
       setGeneralError(error.message ?? 'Something went wrong. Please try again.');
       return;
     }
+    setCode('');
+    setStage('verify');
+  };
 
+  const handleVerifyCode = async () => {
+    setGeneralError(null);
+    const { error } = await signIn.emailCode.verifyCode({ code });
+    if (error) {
+      setGeneralError(error.message ?? 'That code didn’t work — check it and try again.');
+      return;
+    }
     if (signIn.status === 'complete') {
       await signIn.finalize({ navigate: () => {} });
     } else if (signIn.status === 'needs_client_trust') {
       const emailCodeFactor = signIn.supportedSecondFactors?.find((factor) => factor.strategy === 'email_code');
       if (emailCodeFactor) {
         await signIn.mfa.sendEmailCode();
-        setNeedsCode(true);
+        setCode('');
+        setStage('trust');
       } else {
         setGeneralError('This account needs additional verification we don’t support yet.');
       }
@@ -185,9 +197,13 @@ function SignInCard({ flow }: { flow: SignInFlow }) {
     }
   };
 
-  const handleVerify = async () => {
+  const handleVerifyTrust = async () => {
     setGeneralError(null);
-    await signIn.mfa.verifyEmailCode({ code });
+    const { error } = await signIn.mfa.verifyEmailCode({ code });
+    if (error) {
+      setGeneralError(error.message ?? 'That code didn’t work — check it and try again.');
+      return;
+    }
     if (signIn.status === 'complete') {
       await signIn.finalize({ navigate: () => {} });
     } else {
@@ -195,10 +211,10 @@ function SignInCard({ flow }: { flow: SignInFlow }) {
     }
   };
 
-  if (needsCode) {
+  if (stage === 'verify' || stage === 'trust') {
     return (
       <>
-        <Text style={styles.cardTitle}>Verify it’s you</Text>
+        <Text style={styles.cardTitle}>{stage === 'trust' ? 'Verify it’s you' : 'Check your email'}</Text>
         <Text style={styles.cardSubtitle}>Enter the code we just sent to {emailAddress}</Text>
 
         <Text style={styles.label}>Verification code</Text>
@@ -212,13 +228,13 @@ function SignInCard({ flow }: { flow: SignInFlow }) {
         {errors.fields.code ? <Text style={styles.errorText}>{errors.fields.code.message}</Text> : null}
         {generalError ? <Text style={styles.errorText}>{generalError}</Text> : null}
 
-        <PressableScale onPress={handleVerify} style={styles.primaryButton}>
+        <PressableScale onPress={stage === 'trust' ? handleVerifyTrust : handleVerifyCode} style={styles.primaryButton}>
           {isFetching ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Verify</Text>}
         </PressableScale>
         <PressableScale
           onPress={() => {
             signIn.reset();
-            setNeedsCode(false);
+            setStage('identify');
           }}
           style={styles.ghostButton}
         >
@@ -240,23 +256,13 @@ function SignInCard({ flow }: { flow: SignInFlow }) {
         style={styles.input}
       />
       {errors.fields.identifier ? <Text style={styles.errorText}>{errors.fields.identifier.message}</Text> : null}
-
-      <Text style={styles.label}>Password</Text>
-      <TextInput
-        value={password}
-        onChangeText={setPassword}
-        placeholder="Your password"
-        secureTextEntry
-        style={styles.input}
-      />
-      {errors.fields.password ? <Text style={styles.errorText}>{errors.fields.password.message}</Text> : null}
       {generalError ? <Text style={styles.errorText}>{generalError}</Text> : null}
 
       <PressableScale
-        onPress={handleSubmit}
-        style={[styles.primaryButton, (!emailAddress || !password || isFetching) && styles.primaryButtonDisabled]}
+        onPress={handleSendCode}
+        style={[styles.primaryButton, (!emailAddress || isFetching) && styles.primaryButtonDisabled]}
       >
-        {isFetching ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Sign in</Text>}
+        {isFetching ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Send code</Text>}
       </PressableScale>
     </>
   );
