@@ -5,6 +5,7 @@ import { PressableScale } from './PressableScale';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
 import { fontFamily } from '../theme/fonts';
+import { elevation } from '../theme/elevation';
 
 interface ProfileSubpageHeaderProps {
   title: string;
@@ -17,9 +18,17 @@ export function ProfileSubpageHeader({ title }: ProfileSubpageHeaderProps) {
       <Text style={styles.title} numberOfLines={1}>
         {title}
       </Text>
-      <PressableScale onPress={() => navigation.goBack()} style={styles.closeButton} scaleTo={0.9}>
-        <Text style={styles.closeButtonText}>✕</Text>
-      </PressableScale>
+      {/* The position:'absolute' has to live on a plain View that is the
+          direct child of `wrap` — PressableScale forwards its style prop to
+          an inner Animated.View, one level further in, so absolute/top/right
+          set there is positioned relative to that collapsed inner box
+          instead of `wrap`, which is what made the button drift down onto
+          the row below it. */}
+      <View style={styles.closeButtonAnchor}>
+        <PressableScale onPress={() => navigation.goBack()} style={styles.closeButton} scaleTo={0.9}>
+          <Text style={styles.closeButtonText}>✕</Text>
+        </PressableScale>
+      </View>
     </View>
   );
 }
@@ -41,19 +50,24 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontFamily: fontFamily.extraBold,
   },
-  // A round, filled tap target reads as an obvious "close" affordance and is
-  // much easier to hit than the old top-left text link — same idea as the
-  // circular buttons Rocket Money uses for dismiss/close actions.
-  closeButton: {
+  closeButtonAnchor: {
     position: 'absolute',
     right: spacing.screenPadding,
     top: 12,
+  },
+  // A round, filled tap target reads as an obvious "close" affordance and is
+  // much easier to hit than the old top-left text link — same idea as the
+  // circular buttons Rocket Money uses for dismiss/close actions. White +
+  // a soft shadow so it actually reads as a button against the canvas
+  // background, instead of disappearing into it.
+  closeButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: colors.canvas,
+    backgroundColor: '#fff',
     alignItems: 'center',
     justifyContent: 'center',
+    ...elevation.card,
   },
   closeButtonText: {
     color: colors.foreground,
