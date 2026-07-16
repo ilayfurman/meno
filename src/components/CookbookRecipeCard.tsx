@@ -18,9 +18,17 @@ export function CookbookRecipeCard({ recipe, onPress, onToggleFavorite }: Cookbo
     <PressableScale onPress={onPress} style={styles.card} scaleTo={0.97}>
       <View>
         <MattedPhoto uri={null} aspectRatio={1} borderRadius={16} />
-        <PressableScale onPress={onToggleFavorite} style={styles.favoriteButton}>
-          <Text style={styles.favoriteIcon}>{recipe.is_favorite ? '♥' : '♡'}</Text>
-        </PressableScale>
+        {/* PressableScale forwards `style` to its inner Animated.View, not
+            the outer Pressable that actually participates in layout --
+            position:absolute has to live on a plain wrapping View, or the
+            button falls into normal flow (right after the photo) instead
+            of pinning to its top-right corner. Same bug fixed elsewhere
+            this session (segmented toggle, back button). */}
+        <View style={styles.favoriteButtonWrap}>
+          <PressableScale onPress={onToggleFavorite} style={styles.favoriteButton}>
+            <Text style={styles.favoriteIcon}>{recipe.is_favorite ? '♥' : '♡'}</Text>
+          </PressableScale>
+        </View>
       </View>
       <Text style={styles.title} numberOfLines={2}>
         {recipe.title}
@@ -42,10 +50,12 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: 6,
   },
-  favoriteButton: {
+  favoriteButtonWrap: {
     position: 'absolute',
     top: 8,
     right: 8,
+  },
+  favoriteButton: {
     width: 32,
     height: 32,
     borderRadius: 16,
