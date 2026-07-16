@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSignIn, useSignUp } from '@clerk/expo';
 import { PressableScale } from '../components/PressableScale';
@@ -68,8 +68,7 @@ function WelcomeStage({ onCreateAccount, onLogin }: { onCreateAccount: () => voi
   return (
     <View style={styles.welcomeWrap}>
       <View style={styles.welcomeHero}>
-        {/* Placeholder wordmark — swap for the real logo once it's ready. */}
-        <Text style={styles.wordmark}>Meno</Text>
+        <Image source={require('../../assets/wordmark.png')} style={styles.wordmarkImage} resizeMode="contain" />
         <Text style={styles.welcomeTagline}>Save, organize, and cook smarter.</Text>
       </View>
 
@@ -383,11 +382,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  wordmark: {
-    fontFamily: fontFamily.extraBold,
-    color: colors.foreground,
-    fontSize: 44,
-    letterSpacing: -1,
+  // Matches the source wordmark.png's ~2.22:1 aspect ratio.
+  wordmarkImage: {
+    width: 260,
+    height: 117,
   },
   welcomeTagline: {
     color: colors.subtext,
