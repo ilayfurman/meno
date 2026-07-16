@@ -9,13 +9,16 @@ import { spacing } from '../theme/spacing';
 import { fontFamily } from '../theme/fonts';
 import { elevation } from '../theme/elevation';
 
-type Mode = 'signup' | 'signin';
+type Stage = 'welcome' | 'signup' | 'signin';
 
 // Shown whenever EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY is set and there's no
-// active session — see the ClerkAuthGate in App.tsx. Both hooks stay mounted
-// together so switching the segmented toggle doesn't lose in-progress state.
+// active session — see the ClerkAuthGate in App.tsx. Three linear stages
+// (Rocket Money's flow, trimmed for a low-stakes app): a welcome/landing
+// page with two CTAs, then a dedicated email screen for whichever one was
+// tapped, then the code step. Both hooks stay mounted the whole time so
+// switching stages never loses in-progress state.
 export function AuthScreen() {
-  const [mode, setMode] = useState<Mode>('signup');
+  const [stage, setStage] = useState<Stage>('welcome');
   const signUpFlow = useSignUp();
   const signInFlow = useSignIn();
   const insets = useSafeAreaInsets();
@@ -32,43 +35,54 @@ export function AuthScreen() {
           contentContainerStyle={[styles.content, { paddingTop: Math.max(insets.top, 24) + 20 }]}
           keyboardShouldPersistTaps="handled"
         >
-          <View style={styles.brandMark}>
-            <Text style={styles.brandMarkText}>M</Text>
-          </View>
-
-          <Text style={styles.title}>Welcome to Meno</Text>
-          <Text style={styles.subtitle}>
-            {mode === 'signup' ? 'Create an account to save your cookbook' : 'Sign in to sync your cookbook'}
-          </Text>
-
-          <View style={styles.modeTrack}>
-            {/* PressableScale forwards `style` to its inner Animated.View, not
-                the outer Pressable that actually sizes within this row — so
-                flex:1 has to live on a plain wrapping View instead, or the two
-                segments won't split evenly. */}
-            <View style={styles.modeItem}>
-              <PressableScale onPress={() => setMode('signup')}>
-                <View style={[styles.modeOption, mode === 'signup' && styles.modeOptionActive]}>
-                  <Text style={[styles.modeLabel, mode === 'signup' && styles.modeLabelActive]}>Create account</Text>
-                </View>
-              </PressableScale>
-            </View>
-            <View style={styles.modeItem}>
-              <PressableScale onPress={() => setMode('signin')}>
-                <View style={[styles.modeOption, mode === 'signin' && styles.modeOptionActive]}>
-                  <Text style={[styles.modeLabel, mode === 'signin' && styles.modeLabelActive]}>Sign in</Text>
-                </View>
-              </PressableScale>
-            </View>
-          </View>
-
-          <View style={styles.card}>
-            {mode === 'signup' ? <SignUpCard flow={signUpFlow} /> : <SignInCard flow={signInFlow} />}
-          </View>
-
-          <Text style={styles.footerText}>No passwords — we email you a one-time code instead.</Text>
+          {stage === 'welcome' ? (
+            <WelcomeStage onCreateAccount={() => setStage('signup')} onLogin={() => setStage('signin')} />
+          ) : (
+            <>
+              {/* PressableScale forwards `style` to its inner Animated.View,
+                  not the outer Pressable — alignSelf:'flex-start' has to live
+                  on a plain wrapping View, or the tap target stretches to the
+                  full row width even though only the circle is visible. */}
+              <View style={styles.backButtonWrap}>
+                <PressableScale onPress={() => setStage('welcome')} style={styles.backButton}>
+                  <Text style={styles.backButtonText}>←</Text>
+                </PressableScale>
+              </View>
+              <View style={styles.card}>
+                {stage === 'signup' ? <SignUpCard flow={signUpFlow} /> : <SignInCard flow={signInFlow} />}
+              </View>
+              <Text style={styles.footerText}>No passwords — we email you a one-time code instead.</Text>
+            </>
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
+    </View>
+  );
+}
+
+// Landing page: wordmark + tagline up top (reserved space below for the
+// hero screenshot/illustration once it exists), two CTAs pinned toward the
+// bottom — "Create account" as the primary action, "Log in" as the
+// secondary one for people who already have an account.
+function WelcomeStage({ onCreateAccount, onLogin }: { onCreateAccount: () => void; onLogin: () => void }) {
+  return (
+    <View style={styles.welcomeWrap}>
+      <View style={styles.welcomeHero}>
+        {/* Placeholder wordmark — swap for the real logo once it's ready. */}
+        <Text style={styles.wordmark}>Meno</Text>
+        <Text style={styles.welcomeTagline}>Save, organize, and cook smarter.</Text>
+      </View>
+
+      <View style={styles.welcomeActions}>
+        <PressableScale onPress={onCreateAccount} style={styles.primaryButton}>
+          <Text style={styles.primaryButtonText}>Create account</Text>
+        </PressableScale>
+        <PressableScale onPress={onLogin} style={styles.loginLink}>
+          <Text style={styles.loginLinkText}>
+            Already have an account? <Text style={styles.loginLinkTextBold}>Log in</Text>
+          </Text>
+        </PressableScale>
+      </View>
     </View>
   );
 }
@@ -139,9 +153,12 @@ function SignUpCard({ flow }: { flow: SignUpFlow }) {
 
         <PressableScale
           onPress={handleVerify}
-          style={[styles.primaryButton, (code.length < 6 || isFetching) && styles.primaryButtonDisabled]}
+          style={[styles.primaryButtonInCard, (code.length < 6 || isFetching) && styles.primaryButtonDisabled]}
         >
           {isFetching ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Verify  →</Text>}
+        </PressableScale>
+        <PressableScale onPress={() => setAwaitingCode(false)} style={styles.ghostButton}>
+          <Text style={styles.ghostButtonText}>Change email</Text>
         </PressableScale>
         <PressableScale onPress={() => signUp.verifications.sendEmailCode()} style={styles.ghostButton}>
           <Text style={styles.ghostButtonText}>Resend code</Text>
@@ -152,13 +169,15 @@ function SignUpCard({ flow }: { flow: SignUpFlow }) {
 
   return (
     <>
-      <Text style={styles.label}>Email address</Text>
+      <Text style={styles.pageTitle}>Create account</Text>
+      <Text style={styles.pageSubtitle}>Save recipes and sync your cookbook across devices.</Text>
+
       <TextInput
         value={emailAddress}
         onChangeText={setEmailAddress}
         onFocus={() => setEmailFocused(true)}
         onBlur={() => setEmailFocused(false)}
-        placeholder="you@example.com"
+        placeholder="Email address"
         placeholderTextColor={colors.subtext}
         autoCapitalize="none"
         keyboardType="email-address"
@@ -169,7 +188,7 @@ function SignUpCard({ flow }: { flow: SignUpFlow }) {
 
       <PressableScale
         onPress={handleSubmit}
-        style={[styles.primaryButton, (!emailAddress || isFetching) && styles.primaryButtonDisabled]}
+        style={[styles.primaryButtonInCard, (!emailAddress || isFetching) && styles.primaryButtonDisabled]}
       >
         {isFetching ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Send code  →</Text>}
       </PressableScale>
@@ -254,7 +273,7 @@ function SignInCard({ flow }: { flow: SignInFlow }) {
 
         <PressableScale
           onPress={stage === 'trust' ? handleVerifyTrust : handleVerifyCode}
-          style={[styles.primaryButton, (code.length < 6 || isFetching) && styles.primaryButtonDisabled]}
+          style={[styles.primaryButtonInCard, (code.length < 6 || isFetching) && styles.primaryButtonDisabled]}
         >
           {isFetching ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Verify  →</Text>}
         </PressableScale>
@@ -273,13 +292,15 @@ function SignInCard({ flow }: { flow: SignInFlow }) {
 
   return (
     <>
-      <Text style={styles.label}>Email address</Text>
+      <Text style={styles.pageTitle}>Log in</Text>
+      <Text style={styles.pageSubtitle}>Enter your email to get back into your cookbook.</Text>
+
       <TextInput
         value={emailAddress}
         onChangeText={setEmailAddress}
         onFocus={() => setEmailFocused(true)}
         onBlur={() => setEmailFocused(false)}
-        placeholder="you@example.com"
+        placeholder="Email address"
         placeholderTextColor={colors.subtext}
         autoCapitalize="none"
         keyboardType="email-address"
@@ -290,7 +311,7 @@ function SignInCard({ flow }: { flow: SignInFlow }) {
 
       <PressableScale
         onPress={handleSendCode}
-        style={[styles.primaryButton, (!emailAddress || isFetching) && styles.primaryButtonDisabled]}
+        style={[styles.primaryButtonInCard, (!emailAddress || isFetching) && styles.primaryButtonDisabled]}
       >
         {isFetching ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Send code  →</Text>}
       </PressableScale>
@@ -331,74 +352,85 @@ const styles = StyleSheet.create({
   },
   content: {
     flexGrow: 1,
-    justifyContent: 'center',
     paddingHorizontal: spacing.screenPadding,
     paddingBottom: 40,
   },
-  brandMark: {
-    alignSelf: 'center',
-    width: 56,
-    height: 56,
-    borderRadius: 18,
-    backgroundColor: colors.foreground,
+  // --- Welcome stage ---
+  welcomeWrap: {
+    flex: 1,
+    minHeight: 520,
+    justifyContent: 'space-between',
+  },
+  welcomeHero: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 18,
-    ...elevation.raised,
   },
-  brandMarkText: {
-    color: '#fff',
-    fontFamily: fontFamily.extraBold,
-    fontSize: 24,
-  },
-  title: {
+  wordmark: {
     fontFamily: fontFamily.extraBold,
     color: colors.foreground,
-    fontSize: 29,
-    letterSpacing: -0.6,
-    textAlign: 'center',
+    fontSize: 44,
+    letterSpacing: -1,
   },
-  subtitle: {
+  welcomeTagline: {
+    color: colors.subtext,
+    fontSize: 15,
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  welcomeActions: {
+    gap: 4,
+  },
+  loginLink: {
+    alignItems: 'center',
+    paddingVertical: 16,
+  },
+  loginLinkText: {
     color: colors.subtext,
     fontSize: 13.5,
-    textAlign: 'center',
-    marginTop: 6,
-    marginBottom: 28,
   },
-  modeTrack: {
-    flexDirection: 'row',
-    gap: 6,
-    backgroundColor: '#fff',
-    borderRadius: 14,
-    padding: 4,
+  loginLinkTextBold: {
+    color: colors.foreground,
+    fontFamily: fontFamily.bold,
+    textDecorationLine: 'underline',
+  },
+  // --- Back button + card (signup/signin stages) ---
+  backButtonWrap: {
+    alignSelf: 'flex-start',
     marginBottom: 16,
-    ...elevation.card,
   },
-  modeItem: {
-    flex: 1,
-  },
-  modeOption: {
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#fff',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 11,
-    borderRadius: 10,
+    ...elevation.card,
   },
-  modeOptionActive: {
-    backgroundColor: colors.foreground,
-  },
-  modeLabel: {
-    color: colors.subtext,
+  backButtonText: {
+    color: colors.foreground,
+    fontSize: 17,
     fontFamily: fontFamily.bold,
-    fontSize: 13.5,
-  },
-  modeLabelActive: {
-    color: '#fff',
   },
   card: {
     backgroundColor: '#fff',
     borderRadius: spacing.radiusSheet,
     padding: 22,
     ...elevation.raised,
+  },
+  pageTitle: {
+    fontFamily: fontFamily.extraBold,
+    color: colors.foreground,
+    fontSize: 25,
+    letterSpacing: -0.5,
+  },
+  pageSubtitle: {
+    color: colors.subtext,
+    fontSize: 13.5,
+    lineHeight: 18,
+    marginTop: 6,
+    marginBottom: 22,
   },
   envelopeBadge: {
     alignSelf: 'center',
@@ -428,15 +460,6 @@ const styles = StyleSheet.create({
     marginTop: 5,
     marginBottom: 22,
   },
-  label: {
-    color: colors.subtext,
-    fontSize: 11,
-    fontFamily: fontFamily.bold,
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
-    marginTop: 2,
-    marginBottom: 6,
-  },
   input: {
     backgroundColor: colors.canvas,
     borderRadius: spacing.radiusCard,
@@ -456,7 +479,19 @@ const styles = StyleSheet.create({
     fontSize: 12.5,
     marginTop: 8,
   },
+  // Full-width pill on the plain canvas (welcome stage).
   primaryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accent,
+    borderRadius: spacing.radiusPill,
+    paddingVertical: 16,
+    ...elevation.card,
+  },
+  // Same button, but with the top margin needed when it follows a field
+  // inside the white card instead.
+  primaryButtonInCard: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
