@@ -1,5 +1,5 @@
-import React, { useEffect, useRef } from 'react';
-import { Animated, Dimensions, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { Animated, Dimensions, Keyboard, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
 
@@ -13,6 +13,37 @@ interface BottomSheetProps {
 export function BottomSheet({ visible, onDismiss, children, maxHeightPercent = 80 }: BottomSheetProps) {
   const translateY = useRef(new Animated.Value(Dimensions.get('window').height)).current;
   const opacity = useRef(new Animated.Value(0)).current;
+  // KeyboardAvoidingView depends on the Modal's implicit root actually
+  // handing it real flex height to grow into, which isn't reliable --
+  // tried it, the sheet never budged. Tracking the keyboard directly and
+  // animating the sheet's own bottom offset works regardless of whatever
+  // Modal does internally with layout.
+  const keyboardOffset = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showSub = Keyboard.addListener(showEvent, (e) => {
+      Animated.timing(keyboardOffset, {
+        toValue: e.endCoordinates.height,
+        duration: Platform.OS === 'ios' ? e.duration || 250 : 200,
+        useNativeDriver: false,
+      }).start();
+    });
+    const hideSub = Keyboard.addListener(hideEvent, (e) => {
+      Animated.timing(keyboardOffset, {
+        toValue: 0,
+        duration: Platform.OS === 'ios' ? e.duration || 250 : 200,
+        useNativeDriver: false,
+      }).start();
+    });
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, [keyboardOffset]);
 
   useEffect(() => {
     if (visible) {
@@ -23,8 +54,9 @@ export function BottomSheet({ visible, onDismiss, children, maxHeightPercent = 8
     } else {
       translateY.setValue(Dimensions.get('window').height);
       opacity.setValue(0);
+      keyboardOffset.setValue(0);
     }
-  }, [visible, translateY, opacity]);
+  }, [visible, translateY, opacity, keyboardOffset]);
 
   if (!visible) {
     return null;
@@ -35,27 +67,16 @@ export function BottomSheet({ visible, onDismiss, children, maxHeightPercent = 8
       <Animated.View style={[styles.scrim, { opacity }]}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onDismiss} />
       </Animated.View>
-      {/* Modal renders in its own native root, so a KeyboardAvoidingView
-          anywhere outside the Modal (e.g. wrapping a screen) has no effect
-          on it -- it needs its own, in here. `behavior: 'padding'` adds
-          bottom padding to this wrapper as the keyboard rises; because the
-          sheet below is position:absolute + bottom:0, its bottom edge is
-          anchored to that padding box, so it gets pushed up above the
-          keyboard instead of hiding behind it. box-none keeps the scrim
-          tap-to-dismiss working since this wrapper spans the full screen. */}
-      <KeyboardAvoidingView
-        style={styles.keyboardWrap}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        pointerEvents="box-none"
+      <Animated.View
+        style={[
+          styles.sheet,
+          { maxHeight: `${maxHeightPercent}%`, transform: [{ translateY }], bottom: keyboardOffset },
+        ]}
       >
-        <Animated.View
-          style={[styles.sheet, { maxHeight: `${maxHeightPercent}%`, transform: [{ translateY }] }]}
-        >
-          <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-            {children}
-          </ScrollView>
-        </Animated.View>
-      </KeyboardAvoidingView>
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          {children}
+        </ScrollView>
+      </Animated.View>
     </Modal>
   );
 }
@@ -64,9 +85,6 @@ const styles = StyleSheet.create({
   scrim: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(28,26,23,0.4)',
-  },
-  keyboardWrap: {
-    flex: 1,
   },
   sheet: {
     position: 'absolute',
