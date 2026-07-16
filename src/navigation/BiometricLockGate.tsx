@@ -39,9 +39,18 @@ export function BiometricLockGate({ children, skipInitialLock }: BiometricLockGa
 
   // Re-lock whenever the app comes back from the background, mirroring
   // Rocket Money's behavior -- not just on cold start.
+  //
+  // Only 'background' counts as "the user actually left the app" (home
+  // button, app switcher, etc). 'inactive' is iOS's transient state for
+  // system UI overlaying the app WITHOUT backgrounding it -- and that's
+  // exactly what the Face ID / passcode prompt itself triggers (active ->
+  // inactive -> active), even on a successful unlock. Treating 'inactive'
+  // the same as 'background' here re-locked the app immediately after every
+  // unlock, since the prompt's own transition looked identical to
+  // backgrounding -- an infinite auth-prompt loop.
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (next: AppStateStatus) => {
-      if (appState.current.match(/inactive|background/) && next === 'active' && lockEnabled) {
+      if (appState.current === 'background' && next === 'active' && lockEnabled) {
         setUnlocked(false);
       }
       appState.current = next;
