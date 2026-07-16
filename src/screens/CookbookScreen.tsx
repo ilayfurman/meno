@@ -7,10 +7,10 @@ import { SearchBar } from '../components/SearchBar';
 import { PressableScale } from '../components/PressableScale';
 import { BottomSheet } from '../components/BottomSheet';
 import { ImportRecipeSheet } from '../components/ImportRecipeSheet';
+import { ScreenHeaderBand } from '../components/ScreenHeaderBand';
 import { getCookbookViaBackend, setFavoriteViaBackend } from '../api/backend';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
-import { typography } from '../theme/typography';
 import { fontFamily } from '../theme/fonts';
 import { elevation } from '../theme/elevation';
 import type { StoredRecipe } from '../types';
@@ -88,6 +88,7 @@ export function CookbookScreen() {
 
   return (
     <View style={styles.screen}>
+      <ScreenHeaderBand kicker="Cookbook" title="Everything you've saved & refined" />
       <FlatList
         data={visibleRecipes}
         keyExtractor={(item) => item.id}
@@ -95,10 +96,7 @@ export function CookbookScreen() {
         columnWrapperStyle={styles.gridRow}
         contentContainerStyle={styles.gridContent}
         ListHeaderComponent={
-          <View>
-            <Text style={styles.kicker}>Cookbook</Text>
-            <Text style={styles.title}>Everything you&apos;ve saved &amp; refined</Text>
-
+          <View style={styles.listHeader}>
             <View style={styles.searchRow}>
               <View style={styles.searchInputWrap}>
                 <SearchBar value={searchQuery} onChangeText={setSearchQuery} placeholder="Search your cookbook" />
@@ -206,21 +204,8 @@ const styles = StyleSheet.create({
     flex: 1,
     marginBottom: spacing.gridGap,
   },
-  kicker: {
-    fontFamily: typography.sectionKicker.fontFamily,
-    color: colors.accent,
-    fontSize: 11,
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
-    marginTop: 8,
-  },
-  title: {
-    fontFamily: typography.screenTitle.fontFamily,
-    color: colors.foreground,
-    fontSize: 28,
-    letterSpacing: -0.5,
-    marginTop: 4,
-    marginBottom: 16,
+  listHeader: {
+    paddingTop: 18,
   },
   searchRow: {
     flexDirection: 'row',

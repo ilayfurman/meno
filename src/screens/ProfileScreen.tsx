@@ -5,11 +5,11 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { PressableScale } from '../components/PressableScale';
 import { BottomSheet } from '../components/BottomSheet';
 import { ProfileSettingsRow } from '../components/ProfileSettingsRow';
+import { ScreenHeaderBand } from '../components/ScreenHeaderBand';
 import { getCookbookViaBackend, getPreferencesViaBackend } from '../api/backend';
 import { useAppContext } from '../navigation/AppContext';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
-import { typography } from '../theme/typography';
 import { fontFamily } from '../theme/fonts';
 import { elevation } from '../theme/elevation';
 import type { RootStackParamList } from '../types/navigation';
@@ -39,10 +39,16 @@ export function ProfileScreen() {
 
   return (
     <View style={styles.screen}>
+      <ScreenHeaderBand
+        kicker="Profile"
+        title="Your account"
+        rightIcon={{
+          glyph: '🔔',
+          accessibilityLabel: 'Notifications',
+          onPress: () => navigation.navigate('ProfileNotifications'),
+        }}
+      />
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.kicker}>Profile</Text>
-        <Text style={styles.title}>Your account</Text>
-
         <View style={styles.identityRow}>
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>{initial}</Text>
@@ -133,24 +139,9 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: spacing.screenPadding,
+    paddingTop: 18,
     paddingBottom: 120,
     gap: 4,
-  },
-  kicker: {
-    fontFamily: typography.sectionKicker.fontFamily,
-    color: colors.accent,
-    fontSize: 11,
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
-    marginTop: 8,
-  },
-  title: {
-    fontFamily: typography.screenTitle.fontFamily,
-    color: colors.foreground,
-    fontSize: 28,
-    letterSpacing: -0.5,
-    marginTop: 4,
-    marginBottom: 16,
   },
   identityRow: {
     flexDirection: 'row',
