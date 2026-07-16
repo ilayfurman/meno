@@ -4,6 +4,7 @@ import { MattedPhoto } from './MattedPhoto';
 import { PressableScale } from './PressableScale';
 import { TagPill } from './TagPill';
 import { colors } from '../theme/colors';
+import { fontFamily } from '../theme/fonts';
 import type { StoredRecipe } from '../types';
 
 interface CookbookRecipeCardProps {
@@ -59,7 +60,7 @@ const styles = StyleSheet.create({
   title: {
     color: colors.foreground,
     fontSize: 14.5,
-    fontWeight: '700',
+    fontFamily: fontFamily.bold,
   },
   meta: {
     color: colors.subtext,

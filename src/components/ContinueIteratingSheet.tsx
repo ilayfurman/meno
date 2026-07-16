@@ -6,6 +6,7 @@ import { PressableScale } from './PressableScale';
 import { buildContinueIteratingText } from '../utils/recipeExport';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
+import { fontFamily } from '../theme/fonts';
 import type { StoredRecipe } from '../types';
 
 interface ContinueIteratingSheetProps {
@@ -42,7 +43,7 @@ const styles = StyleSheet.create({
   title: {
     color: colors.foreground,
     fontSize: 20,
-    fontWeight: '800',
+    fontFamily: fontFamily.extraBold,
   },
   subtitle: {
     color: colors.subtext,
@@ -70,6 +71,6 @@ const styles = StyleSheet.create({
   },
   copyButtonText: {
     color: '#fff',
-    fontWeight: '700',
+    fontFamily: fontFamily.bold,
   },
 });

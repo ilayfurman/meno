@@ -21,6 +21,7 @@ import {
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
 import { typography } from '../theme/typography';
+import { fontFamily } from '../theme/fonts';
 import type { StoredRecipe } from '../types';
 import type { RootStackParamList } from '../types/navigation';
 
@@ -204,7 +205,7 @@ const styles = StyleSheet.create({
   backButtonText: {
     color: colors.accent,
     fontSize: 14,
-    fontWeight: '600',
+    fontFamily: fontFamily.semiBold,
   },
   title: {
     fontFamily: typography.screenTitle.fontFamily,
@@ -230,7 +231,7 @@ const styles = StyleSheet.create({
   },
   addVideoText: {
     color: colors.subtext,
-    fontWeight: '600',
+    fontFamily: fontFamily.semiBold,
     fontSize: 13,
   },
   versionStrip: {
@@ -278,7 +279,7 @@ const styles = StyleSheet.create({
   },
   actionButtonText: {
     color: colors.foreground,
-    fontWeight: '700',
+    fontFamily: fontFamily.bold,
     fontSize: 13,
   },
   primaryActionButton: {
@@ -290,7 +291,7 @@ const styles = StyleSheet.create({
   },
   primaryActionButtonText: {
     color: '#fff',
-    fontWeight: '700',
+    fontFamily: fontFamily.bold,
     fontSize: 13,
   },
   sectionKicker: {
@@ -304,7 +305,7 @@ const styles = StyleSheet.create({
   videoEditTitle: {
     color: colors.foreground,
     fontSize: 18,
-    fontWeight: '800',
+    fontFamily: fontFamily.extraBold,
     marginBottom: 12,
   },
   videoInput: {

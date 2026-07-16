@@ -2,6 +2,7 @@ import React from 'react';
 import { Linking, StyleSheet, Text, View } from 'react-native';
 import { PressableScale } from './PressableScale';
 import type { VideoPlatform } from '../types';
+import { fontFamily } from '../theme/fonts';
 
 interface VideoAttachmentCardProps {
   videoUrl: string;
@@ -50,7 +51,7 @@ const styles = StyleSheet.create({
   label: {
     flex: 1,
     fontSize: 14,
-    fontWeight: '700',
+    fontFamily: fontFamily.bold,
   },
   editButton: {
     width: 28,

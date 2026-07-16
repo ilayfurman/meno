@@ -7,11 +7,12 @@ interface ProfileSettingsRowProps {
   label: string;
   value?: string;
   onPress: () => void;
+  isLast?: boolean;
 }
 
-export function ProfileSettingsRow({ label, value, onPress }: ProfileSettingsRowProps) {
+export function ProfileSettingsRow({ label, value, onPress, isLast }: ProfileSettingsRowProps) {
   return (
-    <PressableScale onPress={onPress} style={styles.row} scaleTo={0.98}>
+    <PressableScale onPress={onPress} style={[styles.row, isLast && styles.rowLast]} scaleTo={0.98}>
       <Text style={styles.label}>{label}</Text>
       <View style={styles.right}>
         {value ? <Text style={styles.value} numberOfLines={1}>{value}</Text> : null}
@@ -26,15 +27,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 14,
-    paddingVertical: 13,
+    paddingVertical: 14,
     borderBottomWidth: 1,
     borderBottomColor: colors.hairlineAlt,
   },
+  rowLast: {
+    borderBottomWidth: 0,
+  },
   label: {
     color: colors.foreground,
-    fontSize: 15,
-    fontWeight: '600',
+    fontSize: 14,
   },
   right: {
     flexDirection: 'row',
@@ -44,7 +46,7 @@ const styles = StyleSheet.create({
   },
   value: {
     color: colors.subtext,
-    fontSize: 13,
+    fontSize: 12.5,
     flexShrink: 1,
   },
   chevron: {

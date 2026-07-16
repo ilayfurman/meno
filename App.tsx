@@ -9,6 +9,9 @@ import { defaultBilling, defaultUserProfile, getBilling, getUserProfile, saveBil
 import { generateFullRecipeFromSummary, generateRecipeSummaries } from './src/ai/openai';
 import { generateRecipeSummariesViaBackend, hydrateRecipeViaBackend, isBackendEnabled } from './src/api/backend';
 import { fontsToLoad } from './src/theme/fonts';
+import { applyGlobalTextDefaults } from './src/theme/globalTextDefaults';
+
+applyGlobalTextDefaults();
 import type { BillingInfo, GeneratedRecipeRun, GenerationRequest, Recipe, UserPreferences, UserProfile } from './src/types';
 
 export default function App() {

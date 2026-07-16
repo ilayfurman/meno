@@ -10,6 +10,7 @@ import { createRecipeViaBackend } from '../api/backend';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
 import { typography } from '../theme/typography';
+import { fontFamily } from '../theme/fonts';
 import type { DifficultyOption, Recipe, TimeOption, VibeOption } from '../types';
 import type { RootStackParamList } from '../types/navigation';
 
@@ -181,7 +182,7 @@ const styles = StyleSheet.create({
   closeButtonText: {
     color: colors.accent,
     fontSize: 14,
-    fontWeight: '600',
+    fontFamily: fontFamily.semiBold,
   },
   hero: {
     fontFamily: typography.screenTitle.fontFamily,
@@ -201,7 +202,9 @@ const styles = StyleSheet.create({
   },
   vibeTile: {
     width: '47%',
-    aspectRatio: 1.3,
+    minHeight: 92,
+    paddingVertical: 14,
+    paddingHorizontal: 8,
     borderRadius: spacing.radiusCard,
     borderWidth: 1,
     borderColor: colors.hairline,
@@ -218,8 +221,9 @@ const styles = StyleSheet.create({
   },
   vibeLabel: {
     color: colors.subtext,
-    fontWeight: '700',
+    fontFamily: fontFamily.bold,
     fontSize: 13,
+    textAlign: 'center',
   },
   vibeLabelActive: {
     color: colors.accent,
@@ -227,7 +231,7 @@ const styles = StyleSheet.create({
   sectionLabel: {
     color: colors.subtext,
     fontSize: 11,
-    fontWeight: '700',
+    fontFamily: fontFamily.bold,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginTop: 4,
@@ -250,7 +254,7 @@ const styles = StyleSheet.create({
   },
   pillText: {
     color: colors.subtext,
-    fontWeight: '600',
+    fontFamily: fontFamily.semiBold,
     fontSize: 13,
   },
   pillTextActive: {
@@ -265,7 +269,7 @@ const styles = StyleSheet.create({
   },
   generateButtonText: {
     color: '#fff',
-    fontWeight: '800',
+    fontFamily: fontFamily.extraBold,
     fontSize: 15,
   },
   finePrint: {
@@ -290,7 +294,7 @@ const styles = StyleSheet.create({
   resultTitle: {
     color: colors.foreground,
     fontSize: 15,
-    fontWeight: '700',
+    fontFamily: fontFamily.bold,
   },
   resultMeta: {
     color: colors.subtext,
@@ -311,7 +315,7 @@ const styles = StyleSheet.create({
   },
   saveButtonText: {
     color: '#fff',
-    fontWeight: '700',
+    fontFamily: fontFamily.bold,
     fontSize: 13,
   },
   connectHint: {

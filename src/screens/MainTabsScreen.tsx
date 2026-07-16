@@ -6,6 +6,7 @@ import { ProfileScreen } from './ProfileScreen';
 import { PressableScale } from '../components/PressableScale';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
+import { fontFamily } from '../theme/fonts';
 import type { MainTabParamList } from '../types/navigation';
 
 type TabKey = keyof MainTabParamList;
@@ -31,7 +32,11 @@ export function MainTabsScreen() {
           {tabs.map((tab) => {
             const active = tab.key === activeTab;
             return (
-              <PressableScale key={tab.key} onPress={() => setActiveTab(tab.key)} style={styles.tabButton}>
+              <PressableScale
+                key={tab.key}
+                onPress={() => setActiveTab(tab.key)}
+                style={[styles.tabButton, active && styles.tabButtonActive]}
+              >
                 <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>{tab.label}</Text>
               </PressableScale>
             );
@@ -59,27 +64,32 @@ const styles = StyleSheet.create({
   },
   tabBar: {
     flexDirection: 'row',
-    backgroundColor: colors.foreground,
+    backgroundColor: '#fff',
     borderRadius: spacing.radiusPill,
-    paddingVertical: 10,
-    paddingHorizontal: 8,
+    padding: 6,
     gap: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.2,
-    shadowRadius: 16,
+    shadowColor: colors.foreground,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.18,
+    shadowRadius: 30,
   },
   tabButton: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: spacing.radiusPill,
     paddingHorizontal: 22,
-    paddingVertical: 4,
+    paddingVertical: 11,
+  },
+  tabButtonActive: {
+    backgroundColor: colors.foreground,
   },
   tabLabel: {
-    color: 'rgba(255,255,255,0.6)',
-    fontSize: 14,
-    fontWeight: '600',
+    fontFamily: fontFamily.bold,
+    color: colors.subtext,
+    fontSize: 11,
   },
   tabLabelActive: {
-    color: colors.accent,
-    fontWeight: '800',
+    color: '#fff',
   },
 });

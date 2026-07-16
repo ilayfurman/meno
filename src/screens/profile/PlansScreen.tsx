@@ -5,6 +5,7 @@ import { PressableScale } from '../../components/PressableScale';
 import { getPreferencesViaBackend } from '../../api/backend';
 import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
+import { fontFamily } from '../../theme/fonts';
 
 const plans = [
   {
@@ -103,7 +104,7 @@ const styles = StyleSheet.create({
   cardTitle: {
     color: colors.foreground,
     fontSize: 17,
-    fontWeight: '800',
+    fontFamily: fontFamily.extraBold,
   },
   currentBadge: {
     borderRadius: spacing.radiusPill,
@@ -114,12 +115,12 @@ const styles = StyleSheet.create({
   currentBadgeText: {
     color: '#fff',
     fontSize: 10,
-    fontWeight: '700',
+    fontFamily: fontFamily.bold,
   },
   cardPrice: {
     color: colors.foreground,
     fontSize: 15,
-    fontWeight: '700',
+    fontFamily: fontFamily.bold,
     marginBottom: 4,
   },
   feature: {
@@ -135,7 +136,7 @@ const styles = StyleSheet.create({
   },
   ctaButtonText: {
     color: '#fff',
-    fontWeight: '700',
+    fontFamily: fontFamily.bold,
   },
   upgradeMessage: {
     color: colors.subtext,

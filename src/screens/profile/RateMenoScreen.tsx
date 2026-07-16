@@ -5,6 +5,7 @@ import { ProfileSubpageHeader } from '../../components/ProfileSubpageHeader';
 import { PressableScale } from '../../components/PressableScale';
 import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
+import { fontFamily } from '../../theme/fonts';
 
 // TODO: replace YOUR_APP_ID once Meno has a real App Store listing.
 const APP_STORE_REVIEW_URL = 'itms-apps://itunes.apple.com/app/idYOUR_APP_ID?action=write-review';
@@ -62,18 +63,18 @@ const styles = StyleSheet.create({
   },
   rateButtonText: {
     color: '#fff',
-    fontWeight: '700',
+    fontFamily: fontFamily.bold,
   },
   thanksText: {
     color: colors.foreground,
     fontSize: 15,
-    fontWeight: '600',
+    fontFamily: fontFamily.semiBold,
   },
   dismissButton: {
     paddingVertical: 8,
   },
   dismissButtonText: {
     color: colors.subtext,
-    fontWeight: '600',
+    fontFamily: fontFamily.semiBold,
   },
 });

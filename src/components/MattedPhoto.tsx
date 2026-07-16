@@ -2,6 +2,7 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Image } from 'react-native';
 import { colors } from '../theme/colors';
+import { fontFamily } from '../theme/fonts';
 
 interface MattedPhotoProps {
   uri?: string | null;
@@ -43,7 +44,7 @@ const styles = StyleSheet.create({
   placeholderText: {
     color: colors.subtext,
     fontSize: 12,
-    fontWeight: '600',
+    fontFamily: fontFamily.semiBold,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },

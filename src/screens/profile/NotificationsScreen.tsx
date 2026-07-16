@@ -4,6 +4,7 @@ import { ProfileSubpageHeader } from '../../components/ProfileSubpageHeader';
 import { getPreferencesViaBackend, updatePreferencesViaBackend } from '../../api/backend';
 import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
+import { fontFamily } from '../../theme/fonts';
 
 const rows: Array<{ key: 'notify_recipe_saved' | 'notify_weekly_digest' | 'notify_product_updates'; label: string; description: string }> = [
   { key: 'notify_recipe_saved', label: 'New recipe saved', description: 'When a recipe is added to your cookbook.' },
@@ -79,7 +80,7 @@ const styles = StyleSheet.create({
   label: {
     color: colors.foreground,
     fontSize: 15,
-    fontWeight: '700',
+    fontFamily: fontFamily.bold,
   },
   description: {
     color: colors.subtext,

@@ -10,6 +10,7 @@ import { useAppContext } from '../navigation/AppContext';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
 import { typography } from '../theme/typography';
+import { fontFamily } from '../theme/fonts';
 import type { RootStackParamList } from '../types/navigation';
 
 export function ProfileScreen() {
@@ -81,20 +82,20 @@ export function ProfileScreen() {
         <Text style={styles.sectionLabel}>Preferences</Text>
         <View style={styles.groupedList}>
           <ProfileSettingsRow label="Dietary & allergies" value={dietSummary} onPress={() => navigation.navigate('ProfileDietary')} />
-          <ProfileSettingsRow label="Notifications" onPress={() => navigation.navigate('ProfileNotifications')} />
+          <ProfileSettingsRow label="Notifications" onPress={() => navigation.navigate('ProfileNotifications')} isLast />
         </View>
 
         <Text style={styles.sectionLabel}>Support</Text>
         <View style={styles.groupedList}>
           <ProfileSettingsRow label="Help Center" onPress={() => navigation.navigate('ProfileHelpCenter')} />
           <ProfileSettingsRow label="Contact us" onPress={() => navigation.navigate('ProfileContactUs')} />
-          <ProfileSettingsRow label="Rate Meno" onPress={() => navigation.navigate('ProfileRateMeno')} />
+          <ProfileSettingsRow label="Rate Meno" onPress={() => navigation.navigate('ProfileRateMeno')} isLast />
         </View>
 
         <Text style={styles.sectionLabel}>Legal</Text>
         <View style={styles.groupedList}>
           <ProfileSettingsRow label="Terms of Service" onPress={() => navigation.navigate('ProfileTerms')} />
-          <ProfileSettingsRow label="Privacy Policy" onPress={() => navigation.navigate('ProfilePrivacy')} />
+          <ProfileSettingsRow label="Privacy Policy" onPress={() => navigation.navigate('ProfilePrivacy')} isLast />
         </View>
 
         <PressableScale onPress={() => setSignOutOpen(true)} style={styles.signOutRow}>
@@ -167,12 +168,12 @@ const styles = StyleSheet.create({
   avatarText: {
     color: '#fff',
     fontSize: 18,
-    fontWeight: '800',
+    fontFamily: fontFamily.extraBold,
   },
   name: {
     color: colors.foreground,
     fontSize: 16,
-    fontWeight: '700',
+    fontFamily: fontFamily.bold,
   },
   email: {
     color: colors.subtext,
@@ -193,7 +194,7 @@ const styles = StyleSheet.create({
   statValue: {
     color: colors.foreground,
     fontSize: 20,
-    fontWeight: '800',
+    fontFamily: fontFamily.extraBold,
   },
   statLabel: {
     color: colors.subtext,
@@ -212,7 +213,7 @@ const styles = StyleSheet.create({
   planName: {
     color: '#fff',
     fontSize: 15,
-    fontWeight: '800',
+    fontFamily: fontFamily.extraBold,
   },
   planSummary: {
     color: 'rgba(255,255,255,0.6)',
@@ -227,22 +228,22 @@ const styles = StyleSheet.create({
   },
   upgradePillText: {
     color: '#fff',
-    fontWeight: '700',
+    fontFamily: fontFamily.bold,
     fontSize: 12,
   },
   sectionLabel: {
     color: colors.subtext,
     fontSize: 11,
-    fontWeight: '700',
+    fontFamily: fontFamily.bold,
     letterSpacing: 0.5,
     textTransform: 'uppercase',
     marginBottom: 6,
     marginTop: 12,
   },
   groupedList: {
-    borderWidth: 1,
-    borderColor: colors.hairlineAlt,
-    borderRadius: spacing.radiusCard,
+    backgroundColor: colors.matBackground,
+    borderRadius: 16,
+    paddingHorizontal: 14,
     overflow: 'hidden',
   },
   signOutRow: {
@@ -252,13 +253,13 @@ const styles = StyleSheet.create({
   },
   signOutText: {
     color: colors.accent,
-    fontWeight: '700',
+    fontFamily: fontFamily.bold,
     fontSize: 14,
   },
   signOutTitle: {
     color: colors.foreground,
     fontSize: 17,
-    fontWeight: '700',
+    fontFamily: fontFamily.bold,
     marginBottom: 16,
     textAlign: 'center',
   },
@@ -273,7 +274,7 @@ const styles = StyleSheet.create({
   },
   signOutCancelText: {
     color: colors.subtext,
-    fontWeight: '700',
+    fontFamily: fontFamily.bold,
   },
   signOutConfirm: {
     flex: 1,
@@ -284,6 +285,6 @@ const styles = StyleSheet.create({
   },
   signOutConfirmText: {
     color: '#fff',
-    fontWeight: '700',
+    fontFamily: fontFamily.bold,
   },
 });

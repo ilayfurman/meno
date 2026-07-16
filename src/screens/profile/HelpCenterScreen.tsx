@@ -4,6 +4,7 @@ import { ProfileSubpageHeader } from '../../components/ProfileSubpageHeader';
 import { PressableScale } from '../../components/PressableScale';
 import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
+import { fontFamily } from '../../theme/fonts';
 
 const faqs = [
   { question: 'How do I save a recipe to my cookbook?', answer: 'Tap the + button on the Cookbook screen to import from a link, or save a Quick Generate result directly.' },
@@ -75,7 +76,7 @@ const styles = StyleSheet.create({
   faqQuestion: {
     color: colors.foreground,
     fontSize: 14.5,
-    fontWeight: '700',
+    fontFamily: fontFamily.bold,
   },
   faqAnswer: {
     color: colors.subtext,

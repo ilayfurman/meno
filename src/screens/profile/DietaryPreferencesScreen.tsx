@@ -5,6 +5,7 @@ import { Chip } from '../../components/Chip';
 import { getPreferencesViaBackend, updatePreferencesViaBackend } from '../../api/backend';
 import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
+import { fontFamily } from '../../theme/fonts';
 
 const dietOptions = ['Vegetarian', 'Vegan', 'Pescatarian', 'Omnivore'];
 const avoidOptions = ['No Nuts', 'No Dairy', 'No Gluten', 'No Shellfish'];
@@ -73,7 +74,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     color: colors.accent,
     fontSize: 11,
-    fontWeight: '700',
+    fontFamily: fontFamily.bold,
     letterSpacing: 0.6,
     textTransform: 'uppercase',
     marginTop: 12,

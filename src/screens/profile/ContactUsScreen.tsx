@@ -5,6 +5,7 @@ import { PressableScale } from '../../components/PressableScale';
 import { useAppContext } from '../../navigation/AppContext';
 import { colors } from '../../theme/colors';
 import { spacing } from '../../theme/spacing';
+import { fontFamily } from '../../theme/fonts';
 
 export function ContactUsScreen() {
   const { userProfile } = useAppContext();
@@ -55,7 +56,7 @@ const styles = StyleSheet.create({
   label: {
     color: colors.accent,
     fontSize: 11,
-    fontWeight: '700',
+    fontFamily: fontFamily.bold,
     letterSpacing: 0.6,
     textTransform: 'uppercase',
     marginTop: 12,
@@ -92,6 +93,6 @@ const styles = StyleSheet.create({
   },
   sendButtonText: {
     color: '#fff',
-    fontWeight: '700',
+    fontFamily: fontFamily.bold,
   },
 });

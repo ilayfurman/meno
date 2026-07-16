@@ -4,6 +4,7 @@ import { useNavigation } from '@react-navigation/native';
 import { PressableScale } from './PressableScale';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
+import { fontFamily } from '../theme/fonts';
 
 interface ProfileSubpageHeaderProps {
   title: string;
@@ -34,11 +35,11 @@ const styles = StyleSheet.create({
   backButtonText: {
     color: colors.accent,
     fontSize: 14,
-    fontWeight: '600',
+    fontFamily: fontFamily.semiBold,
   },
   title: {
     color: colors.foreground,
     fontSize: 22,
-    fontWeight: '800',
+    fontFamily: fontFamily.extraBold,
   },
 });

@@ -2,11 +2,11 @@ import React, { useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TextInput, View } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import { BottomSheet } from './BottomSheet';
-import { SegmentedControl } from './SegmentedControl';
 import { PressableScale } from './PressableScale';
 import { importRecipeFromPdfViaBackend, importRecipeFromTextViaBackend, importRecipeFromUrlViaBackend } from '../api/backend';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
+import { fontFamily } from '../theme/fonts';
 import type { StoredRecipe } from '../types';
 
 type ImportSegment = 'link' | 'pdf' | 'text';
@@ -103,14 +103,21 @@ export function ImportRecipeSheet({ visible, onDismiss, onImported }: ImportReci
           <Text style={styles.title}>Add a recipe</Text>
           <Text style={styles.subtitle}>Claude formats it for your cookbook</Text>
 
-          <View style={styles.segmentWrap}>
-            <SegmentedControl
-              options={['link', 'pdf', 'text'] as const}
-              selected={segment}
-              onChange={setSegment}
-              labelFormatter={(v) => (v === 'link' ? 'Link' : v === 'pdf' ? 'PDF' : 'Text')}
-              tone="coral"
-            />
+          <View style={styles.segmentTrack}>
+            {(['link', 'pdf', 'text'] as const).map((option) => {
+              const active = option === segment;
+              return (
+                <PressableScale
+                  key={option}
+                  onPress={() => setSegment(option)}
+                  style={[styles.segmentOption, active && styles.segmentOptionActive]}
+                >
+                  <Text style={[styles.segmentLabel, active && styles.segmentLabelActive]}>
+                    {option === 'link' ? 'Link' : option === 'pdf' ? 'PDF' : 'Text'}
+                  </Text>
+                </PressableScale>
+              );
+            })}
           </View>
 
           {segment === 'link' ? (
@@ -154,25 +161,54 @@ export function ImportRecipeSheet({ visible, onDismiss, onImported }: ImportReci
 const styles = StyleSheet.create({
   title: {
     color: colors.foreground,
-    fontSize: 20,
-    fontWeight: '800',
+    fontSize: 15,
+    fontFamily: fontFamily.extraBold,
   },
   subtitle: {
     color: colors.subtext,
-    fontSize: 13,
+    fontSize: 12,
     marginTop: 2,
-    marginBottom: 16,
   },
-  segmentWrap: {
+  segmentTrack: {
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: 14,
     marginBottom: 16,
+    backgroundColor: '#f3f0ea',
+    borderRadius: 12,
+    padding: 4,
+  },
+  segmentOption: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 9,
+    paddingHorizontal: 4,
+    borderRadius: 9,
+  },
+  segmentOptionActive: {
+    backgroundColor: '#fff',
+    shadowColor: colors.foreground,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+  },
+  segmentLabel: {
+    fontFamily: fontFamily.bold,
+    fontSize: 12.5,
+    color: colors.subtext,
+  },
+  segmentLabelActive: {
+    color: colors.foreground,
   },
   input: {
+    backgroundColor: colors.matBackground,
     borderWidth: 1,
     borderColor: colors.hairline,
     borderRadius: spacing.radiusCard,
     paddingHorizontal: 14,
     paddingVertical: 12,
-    fontSize: 15,
+    fontSize: 14,
     color: colors.foreground,
   },
   textarea: {
@@ -180,17 +216,19 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
   dropZone: {
-    borderWidth: 1,
+    backgroundColor: colors.matBackground,
+    borderWidth: 1.5,
     borderStyle: 'dashed',
-    borderColor: colors.hairline,
+    borderColor: '#ddd4c2',
     borderRadius: spacing.radiusCard,
-    paddingVertical: 28,
+    paddingVertical: 22,
+    paddingHorizontal: 14,
     alignItems: 'center',
   },
   dropZoneText: {
     color: colors.subtext,
     fontSize: 14,
-    fontWeight: '600',
+    fontFamily: fontFamily.semiBold,
   },
   errorText: {
     color: colors.danger,
@@ -209,7 +247,7 @@ const styles = StyleSheet.create({
   },
   ghostButtonText: {
     color: colors.subtext,
-    fontWeight: '700',
+    fontFamily: fontFamily.bold,
   },
   primaryButton: {
     flex: 1,
@@ -220,7 +258,7 @@ const styles = StyleSheet.create({
   },
   primaryButtonText: {
     color: '#fff',
-    fontWeight: '700',
+    fontFamily: fontFamily.bold,
   },
   processing: {
     alignItems: 'center',
@@ -236,6 +274,6 @@ const styles = StyleSheet.create({
     color: colors.foreground,
     textAlign: 'center',
     fontSize: 15,
-    fontWeight: '600',
+    fontFamily: fontFamily.semiBold,
   },
 });

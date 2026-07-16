@@ -11,6 +11,7 @@ import { getCookbookViaBackend, setFavoriteViaBackend } from '../api/backend';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
 import { typography } from '../theme/typography';
+import { fontFamily } from '../theme/fonts';
 import type { StoredRecipe } from '../types';
 import type { CookbookFilter, CookbookSortKey } from '../types/cookbook';
 import type { RootStackParamList } from '../types/navigation';
@@ -239,7 +240,7 @@ const styles = StyleSheet.create({
   importButtonText: {
     color: '#fff',
     fontSize: 22,
-    fontWeight: '600',
+    fontFamily: fontFamily.semiBold,
     marginTop: -2,
   },
   filterRow: {
@@ -263,7 +264,7 @@ const styles = StyleSheet.create({
   filterPillText: {
     color: colors.subtext,
     fontSize: 13,
-    fontWeight: '600',
+    fontFamily: fontFamily.semiBold,
   },
   filterPillTextActive: {
     color: '#fff',
@@ -276,7 +277,7 @@ const styles = StyleSheet.create({
   sortTriggerText: {
     color: colors.subtext,
     fontSize: 13,
-    fontWeight: '600',
+    fontFamily: fontFamily.semiBold,
   },
   quickGenerateCard: {
     flexDirection: 'row',
@@ -297,7 +298,7 @@ const styles = StyleSheet.create({
   quickGenerateTitle: {
     color: colors.foreground,
     fontSize: 14.5,
-    fontWeight: '700',
+    fontFamily: fontFamily.bold,
   },
   quickGenerateSubtitle: {
     color: colors.subtext,
@@ -315,7 +316,7 @@ const styles = StyleSheet.create({
   sortOptionText: {
     fontSize: 15,
     color: colors.foreground,
-    fontWeight: '600',
+    fontFamily: fontFamily.semiBold,
   },
   sortOptionTextActive: {
     color: colors.accent,

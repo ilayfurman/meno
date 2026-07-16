@@ -7,6 +7,7 @@ import { BottomSheet } from './BottomSheet';
 import { PressableScale } from './PressableScale';
 import { buildRecipeHtml, buildRecipePlainText } from '../utils/recipeExport';
 import { colors } from '../theme/colors';
+import { fontFamily } from '../theme/fonts';
 import type { StoredRecipe } from '../types';
 
 interface ShareRecipeSheetProps {
@@ -82,7 +83,7 @@ const styles = StyleSheet.create({
   title: {
     color: colors.foreground,
     fontSize: 20,
-    fontWeight: '800',
+    fontFamily: fontFamily.extraBold,
     marginBottom: 16,
   },
   row: {
@@ -102,7 +103,7 @@ const styles = StyleSheet.create({
   rowLabel: {
     color: colors.foreground,
     fontSize: 15,
-    fontWeight: '700',
+    fontFamily: fontFamily.bold,
   },
   rowDescription: {
     color: colors.subtext,
