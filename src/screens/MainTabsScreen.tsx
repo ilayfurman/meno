@@ -39,14 +39,21 @@ export function MainTabsScreen() {
         {tabs.map((tab) => {
           const active = tab.key === activeTab;
           return (
-            <PressableScale
-              key={tab.key}
-              onPress={() => setActiveTab(tab.key)}
-              style={[styles.tabButton, active && styles.tabButtonActive]}
-            >
-              <Text style={[styles.tabGlyph, active && styles.tabGlyphActive]}>{tab.glyph}</Text>
-              <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>{tab.label}</Text>
-            </PressableScale>
+            // The flex:1 that distributes row width has to live on this plain
+            // View — it's the actual direct child Yoga sees in the row. Giving
+            // it instead to PressableScale's inner Animated.View (one level
+            // deeper) left every tab collapsed to near-zero width, since a
+            // flex:1 item with no definite-size parent resolves against a 0
+            // flex-basis instead of its content size.
+            <View key={tab.key} style={styles.tabItem}>
+              <PressableScale
+                onPress={() => setActiveTab(tab.key)}
+                style={[styles.tabButton, active && styles.tabButtonActive]}
+              >
+                <Text style={[styles.tabGlyph, active && styles.tabGlyphActive]}>{tab.glyph}</Text>
+                <Text style={[styles.tabLabel, active && styles.tabLabelActive]}>{tab.label}</Text>
+              </PressableScale>
+            </View>
           );
         })}
       </View>
@@ -76,8 +83,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     ...elevation.tabBar,
   },
-  tabButton: {
+  tabItem: {
     flex: 1,
+  },
+  tabButton: {
     alignItems: 'center',
     justifyContent: 'center',
     gap: 3,

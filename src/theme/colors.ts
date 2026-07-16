@@ -1,10 +1,11 @@
 export const colors = {
   background: '#ffffff',
-  // Visual-refresh exploration (Rocket Money inspired): a soft warm-gray canvas
-  // sits behind white/cream cards so elevation (shadow) does the work of
-  // separating content instead of hairline borders. Screens use this for their
-  // outer background; individual cards stay white or matBackground on top.
-  canvas: '#f4f1ea',
+  // Visual-refresh exploration (Rocket Money inspired): a neutral light-gray
+  // canvas sits behind white cards so elevation (shadow) does the work of
+  // separating content instead of hairline borders. Deliberately neutral/cool
+  // rather than the cream/sand tone Meno used elsewhere — screens use this for
+  // their outer background; individual cards stay white on top.
+  canvas: '#f2f2f5',
   foreground: '#1c1a17',
   subtext: '#8a8479',
   accent: '#c1552f',

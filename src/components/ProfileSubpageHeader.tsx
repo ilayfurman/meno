@@ -14,32 +14,44 @@ export function ProfileSubpageHeader({ title }: ProfileSubpageHeaderProps) {
   const navigation = useNavigation();
   return (
     <View style={styles.wrap}>
-      <PressableScale onPress={() => navigation.goBack()} style={styles.backButton}>
-        <Text style={styles.backButtonText}>‹ Back to Profile</Text>
-      </PressableScale>
       <Text style={styles.title}>{title}</Text>
+      <PressableScale onPress={() => navigation.goBack()} style={styles.closeButton} scaleTo={0.9}>
+        <Text style={styles.closeButtonText}>✕</Text>
+      </PressableScale>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   wrap: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.screenPadding,
     paddingTop: 16,
     paddingBottom: 12,
-  },
-  backButton: {
-    alignSelf: 'flex-start',
-    marginBottom: 8,
-  },
-  backButtonText: {
-    color: colors.accent,
-    fontSize: 14,
-    fontFamily: fontFamily.semiBold,
+    gap: 12,
   },
   title: {
+    flex: 1,
     color: colors.foreground,
     fontSize: 22,
     fontFamily: fontFamily.extraBold,
+  },
+  // A round, filled tap target reads as an obvious "close" affordance and is
+  // much easier to hit than the old top-left text link — same idea as the
+  // circular buttons Rocket Money uses for dismiss/close actions.
+  closeButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: colors.canvas,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  closeButtonText: {
+    color: colors.foreground,
+    fontSize: 15,
+    fontFamily: fontFamily.bold,
   },
 });

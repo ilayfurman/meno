@@ -22,6 +22,7 @@ import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
 import { typography } from '../theme/typography';
 import { fontFamily } from '../theme/fonts';
+import { elevation } from '../theme/elevation';
 import type { StoredRecipe } from '../types';
 import type { RootStackParamList } from '../types/navigation';
 
@@ -94,8 +95,8 @@ export function RecipeDetailScreen() {
   return (
     <View style={styles.screen}>
       <ScrollView contentContainerStyle={styles.content}>
-        <PressableScale onPress={() => navigation.goBack()} style={styles.backButton}>
-          <Text style={styles.backButtonText}>‹ Back to Cookbook</Text>
+        <PressableScale onPress={() => navigation.goBack()} style={styles.backButton} scaleTo={0.9}>
+          <Text style={styles.backButtonText}>✕</Text>
         </PressableScale>
 
         <MattedPhoto uri={null} aspectRatio={1.4} borderRadius={22} />
@@ -199,13 +200,20 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   backButton: {
-    alignSelf: 'flex-start',
+    alignSelf: 'flex-end',
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: 4,
+    ...elevation.card,
   },
   backButtonText: {
-    color: colors.accent,
-    fontSize: 14,
-    fontFamily: fontFamily.semiBold,
+    color: colors.foreground,
+    fontSize: 15,
+    fontFamily: fontFamily.bold,
   },
   title: {
     fontFamily: typography.screenTitle.fontFamily,

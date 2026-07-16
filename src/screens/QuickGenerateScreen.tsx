@@ -66,8 +66,8 @@ export function QuickGenerateScreen() {
   return (
     <View style={styles.screen}>
       <ScrollView contentContainerStyle={styles.content}>
-        <PressableScale onPress={() => navigation.goBack()} style={styles.closeButton}>
-          <Text style={styles.closeButtonText}>‹ Close</Text>
+        <PressableScale onPress={() => navigation.goBack()} style={styles.closeButton} scaleTo={0.9}>
+          <Text style={styles.closeButtonText}>✕</Text>
         </PressableScale>
 
         <Text style={styles.hero}>What sounds good tonight?</Text>
@@ -177,13 +177,20 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   closeButton: {
-    alignSelf: 'flex-start',
+    alignSelf: 'flex-end',
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: 8,
+    ...elevation.card,
   },
   closeButtonText: {
-    color: colors.accent,
-    fontSize: 14,
-    fontFamily: fontFamily.semiBold,
+    color: colors.foreground,
+    fontSize: 15,
+    fontFamily: fontFamily.bold,
   },
   hero: {
     fontFamily: typography.screenTitle.fontFamily,
