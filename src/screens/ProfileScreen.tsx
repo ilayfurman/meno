@@ -143,24 +143,37 @@ export function ProfileScreen() {
       </ScrollView>
 
       <BottomSheet visible={signOutOpen} onDismiss={() => setSignOutOpen(false)}>
+        <View style={styles.signOutIconBadge}>
+          <Text style={styles.signOutIconText}>👋</Text>
+        </View>
         <Text style={styles.signOutTitle}>Sign out of Meno?</Text>
+        <Text style={styles.signOutSubtitle}>You can sign back in anytime — your cookbook stays saved.</Text>
         <View style={styles.signOutActions}>
-          <PressableScale onPress={() => setSignOutOpen(false)} style={styles.signOutCancel}>
-            <Text style={styles.signOutCancelText}>Cancel</Text>
-          </PressableScale>
-          <PressableScale
-            onPress={async () => {
-              // signOut is null under dev-auth (no Clerk configured yet) —
-              // there's no real session to end in that case.
-              if (signOut) {
-                await signOut();
-              }
-              setSignOutOpen(false);
-            }}
-            style={styles.signOutConfirm}
-          >
-            <Text style={styles.signOutConfirmText}>Sign out</Text>
-          </PressableScale>
+          {/* PressableScale forwards `style` to its inner Animated.View, not
+              the outer Pressable that participates in row layout -- flex:1
+              has to live on a plain wrapping View, or these two buttons
+              never actually split the row evenly. Same bug fixed elsewhere
+              this session. */}
+          <View style={styles.signOutButtonWrap}>
+            <PressableScale onPress={() => setSignOutOpen(false)} style={styles.signOutCancel}>
+              <Text style={styles.signOutCancelText}>Cancel</Text>
+            </PressableScale>
+          </View>
+          <View style={styles.signOutButtonWrap}>
+            <PressableScale
+              onPress={async () => {
+                // signOut is null under dev-auth (no Clerk configured yet) —
+                // there's no real session to end in that case.
+                if (signOut) {
+                  await signOut();
+                }
+                setSignOutOpen(false);
+              }}
+              style={styles.signOutConfirm}
+            >
+              <Text style={styles.signOutConfirmText}>Sign out</Text>
+            </PressableScale>
+          </View>
         </View>
       </BottomSheet>
     </View>
@@ -317,29 +330,56 @@ const styles = StyleSheet.create({
     fontFamily: fontFamily.bold,
     fontSize: 14,
   },
+  signOutIconBadge: {
+    alignSelf: 'center',
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: colors.canvas,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+  signOutIconText: {
+    fontSize: 24,
+  },
   signOutTitle: {
     color: colors.foreground,
-    fontSize: 17,
-    fontFamily: fontFamily.bold,
-    marginBottom: 16,
+    fontSize: 18,
+    fontFamily: fontFamily.extraBold,
     textAlign: 'center',
+  },
+  signOutSubtitle: {
+    color: colors.subtext,
+    fontSize: 13.5,
+    textAlign: 'center',
+    marginTop: 6,
+    marginBottom: 22,
+    lineHeight: 19,
   },
   signOutActions: {
     flexDirection: 'row',
     gap: 10,
   },
-  signOutCancel: {
+  // flex:1 lives on this wrapper, not on the PressableScale itself -- see
+  // the comment above the JSX for why.
+  signOutButtonWrap: {
     flex: 1,
+  },
+  signOutCancel: {
     alignItems: 'center',
+    justifyContent: 'center',
     paddingVertical: 14,
+    borderRadius: spacing.radiusPill,
+    backgroundColor: colors.canvas,
   },
   signOutCancelText: {
-    color: colors.subtext,
+    color: colors.foreground,
     fontFamily: fontFamily.bold,
   },
   signOutConfirm: {
-    flex: 1,
     alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: colors.accent,
     borderRadius: spacing.radiusPill,
     paddingVertical: 14,
