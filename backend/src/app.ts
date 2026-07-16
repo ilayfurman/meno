@@ -211,7 +211,7 @@ export function createApp() {
       await db.insert(aiUsage).values({
         userId: request.auth.userId,
         endpoint: '/v1/recipes/generate',
-        model: env.OPENAI_MODEL,
+        model: env.GROQ_MODEL,
         inputTokens: ai.usage?.prompt_tokens ?? 0,
         outputTokens: ai.usage?.completion_tokens ?? 0,
         costEstimateUsd: '0.000000',
@@ -306,7 +306,7 @@ export function createApp() {
       await db.insert(aiUsage).values({
         userId: request.auth.userId,
         endpoint: '/v1/recipes/generate-summaries',
-        model: env.OPENAI_MODEL,
+        model: env.GROQ_MODEL,
         inputTokens: ai.usage?.prompt_tokens ?? 0,
         outputTokens: ai.usage?.completion_tokens ?? 0,
         costEstimateUsd: '0.000000',
@@ -352,7 +352,7 @@ export function createApp() {
       await db.insert(aiUsage).values({
         userId: request.auth.userId,
         endpoint: '/v1/recipes/hydrate-recipe',
-        model: env.OPENAI_MODEL,
+        model: env.GROQ_MODEL,
         inputTokens: ai.usage?.prompt_tokens ?? 0,
         outputTokens: ai.usage?.completion_tokens ?? 0,
         costEstimateUsd: '0.000000',
@@ -522,7 +522,7 @@ export function createApp() {
     await db.insert(aiUsage).values({
       userId: request.auth.userId,
       endpoint: '/v1/recipes/agent',
-      model: env.OPENAI_MODEL,
+      model: env.GROQ_MODEL,
       inputTokens: result.usage?.prompt_tokens ?? 0,
       outputTokens: result.usage?.completion_tokens ?? 0,
       costEstimateUsd: '0.000000',
@@ -573,7 +573,7 @@ export function createApp() {
     await db.insert(aiUsage).values({
       userId: request.auth.userId,
       endpoint: '/v1/recipes/import-text',
-      model: env.OPENAI_MODEL,
+      model: env.GROQ_MODEL,
       inputTokens: extracted.usage?.prompt_tokens ?? 0,
       outputTokens: extracted.usage?.completion_tokens ?? 0,
       costEstimateUsd: '0.000000',
@@ -615,7 +615,7 @@ export function createApp() {
     await db.insert(aiUsage).values({
       userId: request.auth.userId,
       endpoint: '/v1/recipes/import-pdf',
-      model: env.OPENAI_MODEL,
+      model: env.GROQ_MODEL,
       inputTokens: extracted.usage?.prompt_tokens ?? 0,
       outputTokens: extracted.usage?.completion_tokens ?? 0,
       costEstimateUsd: '0.000000',

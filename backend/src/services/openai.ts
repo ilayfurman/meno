@@ -2,7 +2,10 @@ import OpenAI from 'openai';
 import { env } from '../config/env.js';
 import { extractedRecipeSchema, recipeListSchema, recipeSummaryListSchema, type RecipeSummary } from '../types/recipe.js';
 
-const client = new OpenAI({ apiKey: env.OPENAI_API_KEY });
+// Groq's chat completions endpoint is OpenAI-compatible, so the official
+// `openai` SDK works as-is — just repoint baseURL and use a Groq key. Free
+// tier, no credit card: console.groq.com.
+const client = new OpenAI({ apiKey: env.GROQ_API_KEY, baseURL: 'https://api.groq.com/openai/v1' });
 
 const recipeJsonSchema = {
   type: 'object',
@@ -219,7 +222,7 @@ export async function generateRecipesWithAi(params: {
       : messages;
 
     const response = await client.chat.completions.create({
-      model: env.OPENAI_MODEL,
+      model: env.GROQ_MODEL,
       messages: payload,
       response_format: {
         type: 'json_schema',
@@ -283,7 +286,7 @@ export async function generateRecipeSummariesWithAi(params: {
       : messages;
 
     const response = await client.chat.completions.create({
-      model: env.OPENAI_MODEL,
+      model: env.GROQ_MODEL,
       messages: payload,
       response_format: {
         type: 'json_schema',
@@ -417,7 +420,7 @@ export async function structureRecipeFromText(rawText: string) {
       : messages;
 
     const response = await client.chat.completions.create({
-      model: env.OPENAI_MODEL,
+      model: env.GROQ_MODEL,
       messages: payload,
       response_format: {
         type: 'json_schema',
@@ -450,7 +453,7 @@ export async function structureRecipeFromText(rawText: string) {
 
 export async function askAgent(question: string, recipes: unknown[]) {
   const response = await client.chat.completions.create({
-    model: env.OPENAI_MODEL,
+    model: env.GROQ_MODEL,
     messages: [
       {
         role: 'system',

@@ -4,8 +4,13 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(4000),
   DATABASE_URL: z.string().min(1),
-  OPENAI_API_KEY: z.string().min(1),
-  OPENAI_MODEL: z.string().default('gpt-5.2'),
+  // Groq hosts an OpenAI-compatible chat completions endpoint, so the `openai`
+  // SDK works unmodified here — we just point it at Groq's baseURL. The
+  // openai/gpt-oss models are the ones Groq actually supports strict
+  // json_schema structured outputs on, which is what every AI call in this
+  // service relies on, so don't swap the default model without checking that.
+  GROQ_API_KEY: z.string().min(1),
+  GROQ_MODEL: z.string().default('openai/gpt-oss-120b'),
   CLERK_SECRET_KEY: z.string().optional(),
   ALLOW_DEV_AUTH: z.coerce.boolean().default(true),
   DEV_FALLBACK_CLERK_USER_ID: z.string().default('dev-local-user'),
