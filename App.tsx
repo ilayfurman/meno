@@ -353,7 +353,7 @@ export default function App() {
   const appContent = (
     <AppContextProvider value={value}>
       <StatusBar style="dark" />
-      <AppNavigator onboardingComplete={preferences.onboardingComplete} />
+      <AppNavigator />
     </AppContextProvider>
   );
 

@@ -23,7 +23,6 @@ export function ProfileScreen() {
   const { signOut, clerkEnabled } = useAuthCapability();
   const [recipeCount, setRecipeCount] = useState(0);
   const [favoriteCount, setFavoriteCount] = useState(0);
-  const [dietSummary, setDietSummary] = useState('Not set');
   const [plan, setPlan] = useState('free');
   const [signOutOpen, setSignOutOpen] = useState(false);
   const [faceIdLock, setFaceIdLock] = useState(false);
@@ -33,9 +32,7 @@ export function ProfileScreen() {
       setRecipeCount(recipes.length);
       setFavoriteCount(recipes.filter((r) => r.is_favorite).length);
     });
-    void getPreferencesViaBackend().then(({ preferences, plan: currentPlan }) => {
-      const summary = [preferences.diet, ...preferences.avoid].filter(Boolean).join(', ');
-      setDietSummary(summary || 'Not set');
+    void getPreferencesViaBackend().then(({ plan: currentPlan }) => {
       setPlan(currentPlan);
     });
     void getFaceIdLockEnabled().then(setFaceIdLock);
@@ -105,7 +102,6 @@ export function ProfileScreen() {
 
         <Text style={styles.sectionLabel}>Preferences</Text>
         <View style={styles.groupedList}>
-          <ProfileSettingsRow label="Dietary & allergies" value={dietSummary} onPress={() => navigation.navigate('ProfileDietary')} />
           <ProfileSettingsRow label="Notifications" onPress={() => navigation.navigate('ProfileNotifications')} isLast />
         </View>
 

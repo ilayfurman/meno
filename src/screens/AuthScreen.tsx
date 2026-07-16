@@ -129,13 +129,18 @@ function SignUpCard({ flow }: { flow: SignUpFlow }) {
       setGeneralError(error.message ?? 'That code didn’t work — check it and try again.');
       return;
     }
-    if (signUp.status === 'complete') {
-      // Finalize activates the session — our top-level auth gate reacts to
-      // isSignedIn on its own, so there's nothing for us to navigate to here.
-      await signUp.finalize({ navigate: () => {} });
-    } else {
-      setGeneralError('That code didn’t work — check it and try again.');
+    // Don't gate on signUp.status here -- reading it synchronously right
+    // after this await was returning a stale pre-verification snapshot
+    // (verifyEmailCode succeeds with no error, but the local `signUp`
+    // reference hadn't caught up yet), which made real successes look like
+    // failures. finalize() is the actual authority on whether the sign-up
+    // is ready to become a session, so just let it decide.
+    const { error: finalizeError } = await signUp.finalize({ navigate: () => {} });
+    if (finalizeError) {
+      setGeneralError(finalizeError.message ?? 'That code didn’t work — check it and try again.');
     }
+    // Finalize activates the session — our top-level auth gate reacts to
+    // isSignedIn on its own, so there's nothing for us to navigate to here.
   };
 
   if (awaitingCode) {
@@ -228,20 +233,31 @@ function SignInCard({ flow }: { flow: SignInFlow }) {
       setGeneralError(error.message ?? 'That code didn’t work — check it and try again.');
       return;
     }
-    if (signIn.status === 'complete') {
-      await signIn.finalize({ navigate: () => {} });
-    } else if (signIn.status === 'needs_client_trust') {
+
+    // Try finalize optimistically first rather than gating on signIn.status
+    // -- reading it synchronously right after verifyCode() can return a
+    // stale pre-verification snapshot, which made real successes look like
+    // failures. If sign-in genuinely isn't ready yet (e.g. this account
+    // needs the rarer "new device" trust check), finalize fails and
+    // signIn.status will have had a chance to catch up by then.
+    const { error: finalizeError } = await signIn.finalize({ navigate: () => {} });
+    if (!finalizeError) {
+      return;
+    }
+
+    if (signIn.status === 'needs_client_trust') {
       const emailCodeFactor = signIn.supportedSecondFactors?.find((factor) => factor.strategy === 'email_code');
       if (emailCodeFactor) {
         await signIn.mfa.sendEmailCode();
         setCode('');
         setStage('trust');
-      } else {
-        setGeneralError('This account needs additional verification we don’t support yet.');
+        return;
       }
-    } else {
-      setGeneralError('Sign-in needs an extra step we don’t support yet.');
+      setGeneralError('This account needs additional verification we don’t support yet.');
+      return;
     }
+
+    setGeneralError(finalizeError.message ?? 'Sign-in needs an extra step we don’t support yet.');
   };
 
   const handleVerifyTrust = async () => {
@@ -251,10 +267,11 @@ function SignInCard({ flow }: { flow: SignInFlow }) {
       setGeneralError(error.message ?? 'That code didn’t work — check it and try again.');
       return;
     }
-    if (signIn.status === 'complete') {
-      await signIn.finalize({ navigate: () => {} });
-    } else {
-      setGeneralError('That code didn’t work — check it and try again.');
+    // Same reasoning as handleVerifyCode -- trust finalize()'s own error
+    // rather than a possibly-stale signIn.status read.
+    const { error: finalizeError } = await signIn.finalize({ navigate: () => {} });
+    if (finalizeError) {
+      setGeneralError(finalizeError.message ?? 'That code didn’t work — check it and try again.');
     }
   };
 

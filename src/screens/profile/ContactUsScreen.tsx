@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Linking, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Linking, Platform, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ProfileSubpageHeader } from '../../components/ProfileSubpageHeader';
 import { PressableScale } from '../../components/PressableScale';
 import { useAppContext } from '../../navigation/AppContext';
@@ -20,25 +20,27 @@ export function ContactUsScreen() {
   return (
     <View style={styles.screen}>
       <ProfileSubpageHeader title="Contact us" />
-      <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.label}>Your email</Text>
-        <View style={styles.readonlyField}>
-          <Text style={styles.readonlyText}>{userProfile.email}</Text>
-        </View>
+      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          <Text style={styles.label}>Your email</Text>
+          <View style={styles.readonlyField}>
+            <Text style={styles.readonlyText}>{userProfile.email}</Text>
+          </View>
 
-        <Text style={styles.label}>Message</Text>
-        <TextInput
-          value={message}
-          onChangeText={setMessage}
-          placeholder="How can we help?"
-          multiline
-          style={styles.textarea}
-        />
+          <Text style={styles.label}>Message</Text>
+          <TextInput
+            value={message}
+            onChangeText={setMessage}
+            placeholder="How can we help?"
+            multiline
+            style={styles.textarea}
+          />
 
-        <PressableScale onPress={handleSend} style={styles.sendButton}>
-          <Text style={styles.sendButtonText}>Send</Text>
-        </PressableScale>
-      </ScrollView>
+          <PressableScale onPress={handleSend} style={styles.sendButton}>
+            <Text style={styles.sendButtonText}>Send</Text>
+          </PressableScale>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }
@@ -47,6 +49,9 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: colors.canvas,
+  },
+  flex: {
+    flex: 1,
   },
   content: {
     paddingHorizontal: spacing.screenPadding,

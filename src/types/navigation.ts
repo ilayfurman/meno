@@ -7,7 +7,6 @@ export type RootStackParamList = {
   MainTabs: undefined;
   RecipeDetail: { recipeId: string };
   QuickGenerate: undefined;
-  ProfileDietary: undefined;
   ProfileNotifications: undefined;
   ProfileHelpCenter: undefined;
   ProfileContactUs: undefined;
@@ -15,8 +14,4 @@ export type RootStackParamList = {
   ProfileTerms: undefined;
   ProfilePrivacy: undefined;
   ProfilePlans: undefined;
-  // retained from onboarding, unrelated to this redesign
-  OnboardingDiet: undefined;
-  OnboardingAllergies: undefined;
-  OnboardingPrefs: undefined;
 };

@@ -34,7 +34,6 @@ export interface UserPreferences {
   allergies: Allergy[];
   cuisinesLiked: string[];
   spiceLevel: SpiceLevel;
-  onboardingComplete: boolean;
 }
 
 export interface UserProfile {
