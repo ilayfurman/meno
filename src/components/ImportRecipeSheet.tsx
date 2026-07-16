@@ -94,7 +94,7 @@ export function ImportRecipeSheet({ visible, onDismiss, onImported }: ImportReci
       ) : status === 'done' && importedRecipe ? (
         <View style={styles.processing}>
           <Text style={styles.successText}>Saved to your Cookbook — {importedRecipe.title} is ready</Text>
-          <PressableScale onPress={handleDone} style={styles.primaryButton}>
+          <PressableScale onPress={handleDone} style={styles.doneButton}>
             <Text style={styles.primaryButtonText}>Done</Text>
           </PressableScale>
         </View>
@@ -107,15 +107,21 @@ export function ImportRecipeSheet({ visible, onDismiss, onImported }: ImportReci
             {(['link', 'pdf', 'text'] as const).map((option) => {
               const active = option === segment;
               return (
-                <PressableScale
-                  key={option}
-                  onPress={() => setSegment(option)}
-                  style={[styles.segmentOption, active && styles.segmentOptionActive]}
-                >
-                  <Text style={[styles.segmentLabel, active && styles.segmentLabelActive]}>
-                    {option === 'link' ? 'Link' : option === 'pdf' ? 'PDF' : 'Text'}
-                  </Text>
-                </PressableScale>
+                // Wrapping each option in a plain flex:1 View (instead of putting
+                // flex:1 on PressableScale's own style) keeps the three segments
+                // evenly sized — PressableScale forwards `style` to its inner
+                // Animated.View, which isn't the row's real flex child, so flex
+                // values placed there don't distribute space correctly.
+                <View key={option} style={styles.segmentItem}>
+                  <PressableScale
+                    onPress={() => setSegment(option)}
+                    style={[styles.segmentOption, active && styles.segmentOptionActive]}
+                  >
+                    <Text style={[styles.segmentLabel, active && styles.segmentLabelActive]}>
+                      {option === 'link' ? 'Link' : option === 'pdf' ? 'PDF' : 'Text'}
+                    </Text>
+                  </PressableScale>
+                </View>
               );
             })}
           </View>
@@ -148,9 +154,13 @@ export function ImportRecipeSheet({ visible, onDismiss, onImported }: ImportReci
             <PressableScale onPress={handleDismiss} style={styles.ghostButton}>
               <Text style={styles.ghostButtonText}>Cancel</Text>
             </PressableScale>
-            <PressableScale onPress={handleSubmit} style={styles.primaryButton}>
-              <Text style={styles.primaryButtonText}>Import with Claude</Text>
-            </PressableScale>
+            <View style={styles.primaryButtonWrap}>
+              <PressableScale onPress={handleSubmit} style={styles.primaryButton}>
+                <Text style={styles.primaryButtonText} numberOfLines={1}>
+                  Add recipe
+                </Text>
+              </PressableScale>
+            </View>
           </View>
         </>
       )}
@@ -160,26 +170,30 @@ export function ImportRecipeSheet({ visible, onDismiss, onImported }: ImportReci
 
 const styles = StyleSheet.create({
   title: {
+    textAlign: 'center',
     color: colors.foreground,
-    fontSize: 15,
+    fontSize: 18,
     fontFamily: fontFamily.extraBold,
   },
   subtitle: {
+    textAlign: 'center',
     color: colors.subtext,
-    fontSize: 12,
-    marginTop: 2,
+    fontSize: 12.5,
+    marginTop: 4,
   },
   segmentTrack: {
     flexDirection: 'row',
     gap: 6,
-    marginTop: 14,
+    marginTop: 18,
     marginBottom: 16,
     backgroundColor: colors.canvas,
     borderRadius: 12,
     padding: 4,
   },
-  segmentOption: {
+  segmentItem: {
     flex: 1,
+  },
+  segmentOption: {
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 9,
@@ -236,28 +250,49 @@ const styles = StyleSheet.create({
   },
   actionRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: 10,
     marginTop: 20,
   },
+  // Cancel stays a plain text link sized to its own content — it doesn't need
+  // (and shouldn't take) equal billing with the primary action.
   ghostButton: {
-    flex: 1,
     alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
     paddingVertical: 14,
   },
   ghostButtonText: {
     color: colors.subtext,
     fontFamily: fontFamily.bold,
+    fontSize: 14,
+  },
+  // The flex:1 lives on this wrapper, not on primaryButton itself — see the
+  // segmentItem comment above for why (PressableScale forwards style to an
+  // inner Animated.View, which isn't the row's real flex participant).
+  primaryButtonWrap: {
+    flex: 1,
   },
   primaryButton: {
-    flex: 1,
     alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: colors.accent,
     borderRadius: spacing.radiusPill,
+    paddingHorizontal: 12,
     paddingVertical: 14,
   },
   primaryButtonText: {
     color: '#fff',
     fontFamily: fontFamily.bold,
+    fontSize: 14.5,
+  },
+  doneButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accent,
+    borderRadius: spacing.radiusPill,
+    paddingHorizontal: 32,
+    paddingVertical: 14,
   },
   processing: {
     alignItems: 'center',

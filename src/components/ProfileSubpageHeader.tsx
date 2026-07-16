@@ -14,7 +14,9 @@ export function ProfileSubpageHeader({ title }: ProfileSubpageHeaderProps) {
   const navigation = useNavigation();
   return (
     <View style={styles.wrap}>
-      <Text style={styles.title}>{title}</Text>
+      <Text style={styles.title} numberOfLines={1}>
+        {title}
+      </Text>
       <PressableScale onPress={() => navigation.goBack()} style={styles.closeButton} scaleTo={0.9}>
         <Text style={styles.closeButtonText}>✕</Text>
       </PressableScale>
@@ -23,35 +25,39 @@ export function ProfileSubpageHeader({ title }: ProfileSubpageHeaderProps) {
 }
 
 const styles = StyleSheet.create({
+  // Title is centered on the row and the close button floats on top via
+  // absolute positioning, so the title stays visually centered regardless of
+  // the button's width — the same look as Rocket Money's sheet headers.
   wrap: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.screenPadding,
+    justifyContent: 'center',
+    minHeight: 52,
+    paddingHorizontal: 56,
     paddingTop: 16,
     paddingBottom: 12,
-    gap: 12,
   },
   title: {
-    flex: 1,
+    textAlign: 'center',
     color: colors.foreground,
-    fontSize: 22,
+    fontSize: 20,
     fontFamily: fontFamily.extraBold,
   },
   // A round, filled tap target reads as an obvious "close" affordance and is
   // much easier to hit than the old top-left text link — same idea as the
   // circular buttons Rocket Money uses for dismiss/close actions.
   closeButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    position: 'absolute',
+    right: spacing.screenPadding,
+    top: 12,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: colors.canvas,
     alignItems: 'center',
     justifyContent: 'center',
   },
   closeButtonText: {
     color: colors.foreground,
-    fontSize: 15,
+    fontSize: 17,
     fontFamily: fontFamily.bold,
   },
 });

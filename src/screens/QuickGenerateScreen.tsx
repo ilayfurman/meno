@@ -178,9 +178,9 @@ const styles = StyleSheet.create({
   },
   closeButton: {
     alignSelf: 'flex-end',
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: '#fff',
     alignItems: 'center',
     justifyContent: 'center',
@@ -189,7 +189,7 @@ const styles = StyleSheet.create({
   },
   closeButtonText: {
     color: colors.foreground,
-    fontSize: 15,
+    fontSize: 17,
     fontFamily: fontFamily.bold,
   },
   hero: {
