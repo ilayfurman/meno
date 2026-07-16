@@ -72,7 +72,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   sectionTitle: {
-    color: colors.accent,
+    color: colors.subtext,
     fontSize: 11,
     fontFamily: fontFamily.bold,
     letterSpacing: 0.6,

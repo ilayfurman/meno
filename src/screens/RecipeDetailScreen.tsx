@@ -304,7 +304,7 @@ const styles = StyleSheet.create({
   },
   sectionKicker: {
     fontFamily: typography.sectionKicker.fontFamily,
-    color: colors.accent,
+    color: colors.subtext,
     fontSize: 11,
     letterSpacing: 0.6,
     textTransform: 'uppercase',

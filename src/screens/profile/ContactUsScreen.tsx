@@ -54,7 +54,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   label: {
-    color: colors.accent,
+    color: colors.subtext,
     fontSize: 11,
     fontFamily: fontFamily.bold,
     letterSpacing: 0.6,
