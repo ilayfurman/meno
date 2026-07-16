@@ -1,5 +1,20 @@
 import { z } from 'zod';
 
+// Nothing in this project ever called dotenv or Node's --env-file flag --
+// .env loading has apparently been happening via something implicit in
+// dev environments (shell config, an IDE integration, etc.), which is why
+// this broke silently. process.loadEnvFile is Node's own built-in .env
+// loader (no dependency needed, available since Node 20.12/21.7) -- this
+// makes loading explicit and no longer dependent on how the process
+// happens to get started. Wrapped in try/catch since production hosts
+// inject real env vars directly and won't have a .env file at all.
+try {
+  process.loadEnvFile(new URL('../../.env', import.meta.url));
+} catch {
+  // No .env file found -- fine in production, or if env vars are already
+  // set some other way.
+}
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(4000),
