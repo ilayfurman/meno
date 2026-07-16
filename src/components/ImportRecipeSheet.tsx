@@ -3,22 +3,30 @@ import { ActivityIndicator, StyleSheet, Text, TextInput, View } from 'react-nati
 import * as DocumentPicker from 'expo-document-picker';
 import { BottomSheet } from './BottomSheet';
 import { PressableScale } from './PressableScale';
-import { importRecipeFromPdfViaBackend, importRecipeFromTextViaBackend, importRecipeFromUrlViaBackend } from '../api/backend';
+import {
+  createRecipeViaBackend,
+  importRecipeFromPdfViaBackend,
+  importRecipeFromTextViaBackend,
+  importRecipeFromUrlViaBackend,
+  type CreateRecipePayload,
+  type DuplicateCandidate,
+} from '../api/backend';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
 import { fontFamily } from '../theme/fonts';
 import type { StoredRecipe } from '../types';
 
 type ImportSegment = 'link' | 'pdf' | 'text';
-type ImportStatus = 'idle' | 'processing' | 'done';
+type ImportStatus = 'idle' | 'processing' | 'duplicate' | 'done';
 
 interface ImportRecipeSheetProps {
   visible: boolean;
   onDismiss: () => void;
   onImported: (recipe: StoredRecipe) => void;
+  onViewExisting: (recipeId: string) => void;
 }
 
-export function ImportRecipeSheet({ visible, onDismiss, onImported }: ImportRecipeSheetProps) {
+export function ImportRecipeSheet({ visible, onDismiss, onImported, onViewExisting }: ImportRecipeSheetProps) {
   const [segment, setSegment] = useState<ImportSegment>('link');
   const [linkValue, setLinkValue] = useState('');
   const [textValue, setTextValue] = useState('');
@@ -26,6 +34,13 @@ export function ImportRecipeSheet({ visible, onDismiss, onImported }: ImportReci
   const [status, setStatus] = useState<ImportStatus>('idle');
   const [error, setError] = useState<string | null>(null);
   const [importedRecipe, setImportedRecipe] = useState<StoredRecipe | null>(null);
+  // Populated when the backend flags a likely duplicate already in the
+  // user's cookbook -- `candidate` is the already-extracted recipe, kept
+  // around so "Add anyway" can go straight to createRecipeViaBackend
+  // without paying for AI extraction a second time.
+  const [duplicateMatch, setDuplicateMatch] = useState<{ existing: DuplicateCandidate; candidate: CreateRecipePayload } | null>(
+    null,
+  );
   // Tracks whether the current importedRecipe has already been handed to
   // onImported, so it's reported exactly once -- as soon as the import
   // succeeds (so it's already in the Cookbook list behind this sheet, not
@@ -40,6 +55,7 @@ export function ImportRecipeSheet({ visible, onDismiss, onImported }: ImportReci
     setStatus('idle');
     setError(null);
     setImportedRecipe(null);
+    setDuplicateMatch(null);
     reportedRef.current = false;
   };
 
@@ -74,23 +90,53 @@ export function ImportRecipeSheet({ visible, onDismiss, onImported }: ImportReci
     setStatus('processing');
     setError(null);
     try {
-      const recipe =
+      const outcome =
         segment === 'link'
           ? await importRecipeFromUrlViaBackend(linkValue.trim())
           : segment === 'pdf' && pdfFile
             ? await importRecipeFromPdfViaBackend(pdfFile)
             : await importRecipeFromTextViaBackend(textValue.trim());
-      setImportedRecipe(recipe);
-      setStatus('done');
-      // Report it now, while the "Saved to your Cookbook" confirmation is
-      // still showing, so it's already visible in the list behind this
-      // sheet rather than only appearing once the sheet closes.
-      onImported(recipe);
-      reportedRef.current = true;
+
+      if (outcome.kind === 'duplicate') {
+        setDuplicateMatch({ existing: outcome.existing, candidate: outcome.candidate });
+        setStatus('duplicate');
+        return;
+      }
+
+      reportImported(outcome.recipe);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Import failed.');
       setStatus('idle');
     }
+  };
+
+  // Shared by the normal success path and "Add anyway" -- reports the
+  // recipe immediately (so it's visible in the Cookbook list behind this
+  // sheet right away) and flips to the confirmation screen.
+  const reportImported = (recipe: StoredRecipe) => {
+    setImportedRecipe(recipe);
+    setStatus('done');
+    onImported(recipe);
+    reportedRef.current = true;
+  };
+
+  const handleAddAnyway = async () => {
+    if (!duplicateMatch) return;
+    setStatus('processing');
+    setError(null);
+    try {
+      const recipe = await createRecipeViaBackend(duplicateMatch.candidate);
+      reportImported(recipe);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Import failed.');
+      setStatus('idle');
+    }
+  };
+
+  const handleViewExisting = () => {
+    if (!duplicateMatch) return;
+    onViewExisting(duplicateMatch.existing.id);
+    handleDismiss();
   };
 
   // Done is just the happy-path close button -- the import was already
@@ -103,6 +149,26 @@ export function ImportRecipeSheet({ visible, onDismiss, onImported }: ImportReci
         <View style={styles.processing}>
           <ActivityIndicator color={colors.accent} />
           <Text style={styles.processingText}>Formatting your recipe… Claude is structuring ingredients, steps, and tags</Text>
+        </View>
+      ) : status === 'duplicate' && duplicateMatch ? (
+        <View style={styles.processing}>
+          <View style={styles.duplicateBadge}>
+            <Text style={styles.duplicateBadgeText}>👀</Text>
+          </View>
+          <Text style={styles.successText}>You may already have this</Text>
+          <Text style={styles.duplicateSubtitle}>
+            "{duplicateMatch.existing.title}" is already in your cookbook — {duplicateMatch.existing.total_time_minutes} min ·{' '}
+            {duplicateMatch.existing.cuisine}
+          </Text>
+          <PressableScale onPress={handleViewExisting} style={styles.doneButton}>
+            <Text style={styles.primaryButtonText}>View existing</Text>
+          </PressableScale>
+          <PressableScale onPress={handleAddAnyway} style={styles.ghostButton}>
+            <Text style={styles.ghostButtonText}>Add anyway</Text>
+          </PressableScale>
+          <PressableScale onPress={() => setStatus('idle')} style={styles.ghostButton}>
+            <Text style={styles.ghostButtonText}>Cancel</Text>
+          </PressableScale>
         </View>
       ) : status === 'done' && importedRecipe ? (
         <View style={styles.processing}>
@@ -329,5 +395,23 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontSize: 15,
     fontFamily: fontFamily.semiBold,
+  },
+  duplicateBadge: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: colors.canvas,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  duplicateBadgeText: {
+    fontSize: 22,
+  },
+  duplicateSubtitle: {
+    color: colors.subtext,
+    textAlign: 'center',
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: -8,
   },
 });

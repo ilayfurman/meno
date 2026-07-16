@@ -184,6 +184,7 @@ export function CookbookScreen() {
         visible={importSheetOpen}
         onDismiss={() => setImportSheetOpen(false)}
         onImported={(recipe) => setRecipes((prev) => [recipe, ...prev])}
+        onViewExisting={(recipeId) => navigation.navigate('RecipeDetail', { recipeId })}
       />
     </View>
   );

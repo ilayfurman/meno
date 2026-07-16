@@ -184,34 +184,61 @@ export async function createRecipeViaBackend(payload: CreateRecipePayload): Prom
   return data.recipe;
 }
 
-export async function importRecipeFromUrlViaBackend(url: string): Promise<StoredRecipe> {
-  const data = await backendFetch<{ recipe: StoredRecipe }>('/v1/recipes/import-url', {
-    method: 'POST',
-    body: { url },
-  });
-  return data.recipe;
+export interface DuplicateCandidate {
+  id: string;
+  title: string;
+  cuisine: string;
+  total_time_minutes: number;
 }
 
-export async function importRecipeFromTextViaBackend(text: string): Promise<StoredRecipe> {
-  const data = await backendFetch<{ recipe: StoredRecipe }>('/v1/recipes/import-text', {
-    method: 'POST',
-    body: { text },
-  });
-  return data.recipe;
+// Import routes return either a freshly-created recipe, or -- when a likely
+// duplicate is already in the user's cookbook -- the existing match plus the
+// newly-extracted `candidate` payload, so the caller can let the user decide
+// (view the existing one, or add this anyway via createRecipeViaBackend
+// without paying for AI extraction a second time).
+export type ImportOutcome =
+  | { kind: 'created'; recipe: StoredRecipe }
+  | { kind: 'duplicate'; existing: DuplicateCandidate; candidate: CreateRecipePayload };
+
+function toImportOutcome(data: { recipe?: StoredRecipe; duplicate?: DuplicateCandidate; candidate?: CreateRecipePayload }): ImportOutcome {
+  if (data.recipe) {
+    return { kind: 'created', recipe: data.recipe };
+  }
+  return { kind: 'duplicate', existing: data.duplicate!, candidate: data.candidate! };
 }
 
-export async function importRecipeFromPdfViaBackend(file: { uri: string; name: string }): Promise<StoredRecipe> {
+export async function importRecipeFromUrlViaBackend(url: string, force = false): Promise<ImportOutcome> {
+  const data = await backendFetch<{ recipe?: StoredRecipe; duplicate?: DuplicateCandidate; candidate?: CreateRecipePayload }>(
+    '/v1/recipes/import-url',
+    { method: 'POST', body: { url, force } },
+  );
+  return toImportOutcome(data);
+}
+
+export async function importRecipeFromTextViaBackend(text: string, force = false): Promise<ImportOutcome> {
+  const data = await backendFetch<{ recipe?: StoredRecipe; duplicate?: DuplicateCandidate; candidate?: CreateRecipePayload }>(
+    '/v1/recipes/import-text',
+    { method: 'POST', body: { text, force } },
+  );
+  return toImportOutcome(data);
+}
+
+export async function importRecipeFromPdfViaBackend(
+  file: { uri: string; name: string },
+  force = false,
+): Promise<ImportOutcome> {
   const form = new FormData();
   form.append('file', {
     uri: file.uri,
     name: file.name,
     type: 'application/pdf',
   } as unknown as Blob);
-  const data = await backendFetch<{ recipe: StoredRecipe }>('/v1/recipes/import-pdf', {
-    method: 'POST',
-    body: form,
-  });
-  return data.recipe;
+  form.append('force', force ? 'true' : 'false');
+  const data = await backendFetch<{ recipe?: StoredRecipe; duplicate?: DuplicateCandidate; candidate?: CreateRecipePayload }>(
+    '/v1/recipes/import-pdf',
+    { method: 'POST', body: form },
+  );
+  return toImportOutcome(data);
 }
 
 export async function addRecipeVersionViaBackend(

@@ -66,6 +66,79 @@ async function assembleStoredRecipe(
   };
 }
 
+export interface DuplicateCandidate {
+  id: string;
+  title: string;
+  cuisine: string;
+  total_time_minutes: number;
+}
+
+// Bigram (2-gram) Dice coefficient -- cheap, dependency-free, and good
+// enough to catch near-duplicate recipe titles ("Chicken Nuggets" vs.
+// "High Protein Chicken Nuggets") without a real NLP/embeddings setup,
+// which would be overkill for a personal cookbook of this size.
+function normalizeTitle(title: string): string {
+  return title.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+function bigrams(s: string): Set<string> {
+  const padded = ` ${s} `;
+  const grams = new Set<string>();
+  for (let i = 0; i < padded.length - 1; i += 1) {
+    grams.add(padded.slice(i, i + 2));
+  }
+  return grams;
+}
+
+function titleSimilarity(a: string, b: string): number {
+  const normA = normalizeTitle(a);
+  const normB = normalizeTitle(b);
+  if (!normA || !normB) return 0;
+  if (normA === normB) return 1;
+  const gramsA = bigrams(normA);
+  const gramsB = bigrams(normB);
+  let overlap = 0;
+  for (const gram of gramsA) {
+    if (gramsB.has(gram)) overlap += 1;
+  }
+  return (2 * overlap) / (gramsA.size + gramsB.size);
+}
+
+const TITLE_SIMILARITY_THRESHOLD = 0.6;
+
+/** Exact source_url match against the user's own cookbook -- cheap and precise, for link imports. */
+export async function findDuplicateBySourceUrl(userId: string, sourceUrl: string): Promise<DuplicateCandidate | null> {
+  const rows = await db
+    .select({ id: recipes.id, title: recipes.title, cuisine: recipes.cuisine, totalTimeMinutes: recipes.totalTimeMinutes })
+    .from(cookbookItems)
+    .innerJoin(recipes, eq(cookbookItems.recipeId, recipes.id))
+    .where(and(eq(cookbookItems.userId, userId), eq(cookbookItems.isArchived, false), eq(recipes.sourceUrl, sourceUrl)))
+    .limit(1);
+  const row = rows[0];
+  if (!row) return null;
+  return { id: row.id, title: row.title, cuisine: row.cuisine, total_time_minutes: row.totalTimeMinutes };
+}
+
+/** Fuzzy title match against the user's own cookbook -- for text/PDF imports, which have no URL to key off. */
+export async function findDuplicateByTitle(userId: string, title: string): Promise<DuplicateCandidate | null> {
+  const rows = await db
+    .select({ id: recipes.id, title: recipes.title, cuisine: recipes.cuisine, totalTimeMinutes: recipes.totalTimeMinutes })
+    .from(cookbookItems)
+    .innerJoin(recipes, eq(cookbookItems.recipeId, recipes.id))
+    .where(and(eq(cookbookItems.userId, userId), eq(cookbookItems.isArchived, false)));
+
+  let best: DuplicateCandidate | null = null;
+  let bestScore = 0;
+  for (const row of rows) {
+    const score = titleSimilarity(row.title, title);
+    if (score > bestScore) {
+      bestScore = score;
+      best = { id: row.id, title: row.title, cuisine: row.cuisine, total_time_minutes: row.totalTimeMinutes };
+    }
+  }
+  return bestScore >= TITLE_SIMILARITY_THRESHOLD ? best : null;
+}
+
 async function getFavoriteFlag(userId: string, recipeId: string): Promise<boolean> {
   const favRow = await db
     .select({ isFavorite: cookbookItems.isFavorite })

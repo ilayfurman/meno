@@ -111,6 +111,14 @@ export const extractedRecipeSchema = z.object({
 
 export const importTextSchema = z.object({
   text: z.string().min(1),
+  force: z.boolean().default(false),
+});
+
+export const duplicateCandidateSchema = z.object({
+  id: z.string().uuid(),
+  title: z.string(),
+  cuisine: z.string(),
+  total_time_minutes: z.number().int().min(1),
 });
 
 export type StoredRecipe = z.infer<typeof storedRecipeSchema>;
@@ -179,6 +187,7 @@ export const eventCreateSchema = z.object({
 
 export const importUrlSchema = z.object({
   url: z.string().url(),
+  force: z.boolean().default(false),
 });
 
 export type Recipe = z.infer<typeof recipeSchema>;

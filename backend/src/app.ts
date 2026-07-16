@@ -34,6 +34,8 @@ import {
   createRecipeForUser,
   deleteRecipe,
   deleteRecipeVersion,
+  findDuplicateBySourceUrl,
+  findDuplicateByTitle,
   getRecipeByIdForUser,
   listCookbook,
   removeFromCookbook,
@@ -546,7 +548,7 @@ export function createApp() {
     // support it while still working on ones that don't.
     const imported = extractRecipeFromJsonLd(page);
     if (imported) {
-      const recipe = await createRecipeForUser(request.auth.userId, {
+      const candidate = {
         title: imported.title,
         cuisine: imported.cuisine,
         servings: imported.servings,
@@ -557,20 +559,38 @@ export function createApp() {
         allergen_warnings: imported.allergen_warnings,
         ingredients: imported.ingredients,
         steps: imported.steps,
-        source_type: 'link',
+        source_type: 'link' as const,
         source_url: imported.source_url,
-      });
+      };
+      if (!parsed.data.force) {
+        const duplicate = await findDuplicateBySourceUrl(request.auth.userId, imported.source_url);
+        if (duplicate) {
+          return { duplicate, candidate };
+        }
+      }
+      const recipe = await createRecipeForUser(request.auth.userId, candidate);
       await saveRecipeToCookbook(request.auth.userId, recipe.id);
       return { recipe };
     }
 
     const pageText = htmlToReadableText(page.html);
     const extracted = await structureRecipeFromText(pageText);
-    const recipe = await createRecipeForUser(request.auth.userId, {
-      ...extracted.recipe,
-      source_type: 'link',
-      source_url: page.url,
-    });
+    const candidate = { ...extracted.recipe, source_type: 'link' as const, source_url: page.url };
+    if (!parsed.data.force) {
+      const duplicate = await findDuplicateBySourceUrl(request.auth.userId, page.url);
+      if (duplicate) {
+        await db.insert(aiUsage).values({
+          userId: request.auth.userId,
+          endpoint: '/v1/recipes/import-url',
+          model: env.GROQ_MODEL,
+          inputTokens: extracted.usage?.prompt_tokens ?? 0,
+          outputTokens: extracted.usage?.completion_tokens ?? 0,
+          costEstimateUsd: '0.000000',
+        });
+        return { duplicate, candidate };
+      }
+    }
+    const recipe = await createRecipeForUser(request.auth.userId, candidate);
     await saveRecipeToCookbook(request.auth.userId, recipe.id);
 
     await db.insert(aiUsage).values({
@@ -592,11 +612,7 @@ export function createApp() {
     }
 
     const extracted = await structureRecipeFromText(parsed.data.text);
-    const recipe = await createRecipeForUser(request.auth.userId, {
-      ...extracted.recipe,
-      source_type: 'text',
-    });
-    await saveRecipeToCookbook(request.auth.userId, recipe.id);
+    const candidate = { ...extracted.recipe, source_type: 'text' as const };
 
     await db.insert(aiUsage).values({
       userId: request.auth.userId,
@@ -607,6 +623,15 @@ export function createApp() {
       costEstimateUsd: '0.000000',
     });
 
+    if (!parsed.data.force) {
+      const duplicate = await findDuplicateByTitle(request.auth.userId, candidate.title);
+      if (duplicate) {
+        return { duplicate, candidate };
+      }
+    }
+
+    const recipe = await createRecipeForUser(request.auth.userId, candidate);
+    await saveRecipeToCookbook(request.auth.userId, recipe.id);
     return { recipe };
   });
 
@@ -633,12 +658,14 @@ export function createApp() {
       return reply.code(400).send({ error: 'Could not extract any text from this PDF.' });
     }
 
+    // request.file() surfaces any other multipart fields sent alongside the
+    // file on file.fields -- each as { value } -- rather than as a typed
+    // request.body the way a plain JSON route would.
+    const forceField = (file.fields as Record<string, { value?: unknown } | undefined>).force;
+    const force = typeof forceField?.value === 'string' && forceField.value === 'true';
+
     const extracted = await structureRecipeFromText(text);
-    const recipe = await createRecipeForUser(request.auth.userId, {
-      ...extracted.recipe,
-      source_type: 'pdf',
-    });
-    await saveRecipeToCookbook(request.auth.userId, recipe.id);
+    const candidate = { ...extracted.recipe, source_type: 'pdf' as const };
 
     await db.insert(aiUsage).values({
       userId: request.auth.userId,
@@ -648,6 +675,16 @@ export function createApp() {
       outputTokens: extracted.usage?.completion_tokens ?? 0,
       costEstimateUsd: '0.000000',
     });
+
+    if (!force) {
+      const duplicate = await findDuplicateByTitle(request.auth.userId, candidate.title);
+      if (duplicate) {
+        return { duplicate, candidate };
+      }
+    }
+
+    const recipe = await createRecipeForUser(request.auth.userId, candidate);
+    await saveRecipeToCookbook(request.auth.userId, recipe.id);
 
     return { recipe };
   });
