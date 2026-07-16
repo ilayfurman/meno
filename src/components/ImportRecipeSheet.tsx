@@ -157,6 +157,7 @@ export function ImportRecipeSheet({ visible, onDismiss, onImported }: ImportReci
               onChangeText={setTextValue}
               placeholder="Paste recipe text — from WhatsApp, Notes, anywhere"
               multiline
+              scrollEnabled
               style={[styles.input, styles.textarea]}
             />
           )}
@@ -237,8 +238,14 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.foreground,
   },
+  // Fixed height (not minHeight) -- a multiline TextInput with only
+  // minHeight set has no upper bound, so it grows to fit however much text
+  // is pasted in instead of staying put and scrolling internally. That's
+  // what was pushing the rest of the sheet (and the keyboard) off-screen
+  // with a long paste.
   textarea: {
-    minHeight: 120,
+    height: 120,
+    maxHeight: 120,
     textAlignVertical: 'top',
   },
   dropZone: {
