@@ -37,8 +37,12 @@ export function CookbookScreen() {
     try {
       const data = await getCookbookViaBackend();
       setRecipes(data);
-    } catch {
-      // leave prior state on load failure — a toast/retry affordance can be added later
+    } catch (err) {
+      // Leave prior state on load failure -- a toast/retry affordance can be
+      // added later -- but at least log it. This used to fail completely
+      // silently, which is how an auth-identity bug (recipes appearing to
+      // vanish) went unnoticed instead of showing up as a visible error.
+      console.error('Failed to load cookbook:', err);
     }
   }, []);
 

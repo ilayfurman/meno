@@ -13,24 +13,37 @@ import { API_BASE_URL, CLERK_PUBLISHABLE_KEY, DEV_CLERK_USER_ID, USE_BACKEND_GEN
 // Resolves the auth header for every backend request. When Clerk is
 // configured and a session is active, this sends a real Bearer token —
 // getClerkInstance() works outside of React components/hooks by design, so
-// this plain async function doesn't need to be a hook. Falls back to the
-// dev header (what the backend's authGuard uses when ALLOW_DEV_AUTH is on)
-// whenever Clerk isn't set up yet or there's no session, so nothing breaks
-// before Clerk is configured.
+// this plain async function doesn't need to be a hook.
+//
+// IMPORTANT: once Clerk is configured, this must NEVER silently fall back to
+// the dev header. The backend maps that fixed dev identity to its own
+// separate internal user record -- if even one request went out under it
+// (e.g. a brief timing hiccup on cold start, before Clerk's session object
+// finishes hydrating), anything read or written through it would silently
+// live under a different "user" than your real Clerk account, with no
+// error. That's exactly what caused saved recipes to appear to vanish after
+// a sign-out/sign-in. So: retry briefly for a real session, and if Clerk is
+// configured but still has none, throw a visible error instead of silently
+// switching identities. The dev header now only exists for the
+// Clerk-not-configured-at-all case (local dev before a Clerk app exists).
 async function getAuthHeaders(): Promise<Record<string, string>> {
   if (CLERK_PUBLISHABLE_KEY) {
-    try {
-      // Imported lazily so this module doesn't hard-require @clerk/expo to
-      // have a provider mounted when Clerk isn't configured at all.
-      const { getClerkInstance } = await import('@clerk/expo');
-      const clerk = getClerkInstance();
-      const token = await clerk.session?.getToken();
-      if (token) {
-        return { Authorization: `Bearer ${token}` };
+    // Imported lazily so this module doesn't hard-require @clerk/expo to
+    // have a provider mounted when Clerk isn't configured at all.
+    const { getClerkInstance } = await import('@clerk/expo');
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      try {
+        const clerk = getClerkInstance();
+        const token = await clerk.session?.getToken();
+        if (token) {
+          return { Authorization: `Bearer ${token}` };
+        }
+      } catch {
+        // keep retrying — session may still be hydrating
       }
-    } catch {
-      // Clerk not ready yet, or no active session — fall through to dev auth.
+      await new Promise((resolve) => setTimeout(resolve, 150));
     }
+    throw new Error('No active Clerk session available yet. Please try again in a moment.');
   }
   return { 'x-dev-clerk-user-id': DEV_CLERK_USER_ID };
 }
