@@ -20,14 +20,6 @@ export interface AppContextValue {
   setRunRecipeError: (runId: string, recipeId: string, message: string) => void;
   removeGeneratedRun: (runId: string) => void;
   removeRecipeFromGeneratedRun: (runId: string, recipeId: string) => void;
-  saveRecipe: (recipe: Recipe) => Promise<boolean>;
-  saveRecipeRevision: (params: {
-    baseRecipeId: string;
-    revisedRecipe: Recipe;
-    replaceBase?: boolean;
-    changeNote?: string;
-  }) => Promise<Recipe>;
-  removeRecipe: (recipeId: string) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextValue | undefined>(undefined);

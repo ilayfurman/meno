@@ -34,7 +34,6 @@ export interface UserPreferences {
   allergies: Allergy[];
   cuisinesLiked: string[];
   spiceLevel: SpiceLevel;
-  onboardingComplete: boolean;
 }
 
 export interface UserProfile {
@@ -117,6 +116,59 @@ export interface RecipeSummary {
   short_hook: string;
   dietary_tags: string[];
   allergen_warnings: string[];
+}
+
+export interface RecipeVersion {
+  id?: string;
+  version_number: number;
+  ingredients: Ingredient[];
+  steps: RecipeStep[];
+  change_note: string | null;
+  created_at?: string | null;
+}
+
+export type VideoPlatform = 'tiktok' | 'instagram' | 'youtube' | 'other';
+
+export interface StoredRecipe {
+  id: string;
+  title: string;
+  cuisine: string;
+  servings: number;
+  total_time_minutes: number;
+  difficulty: string;
+  short_hook: string;
+  dietary_tags: string[];
+  allergen_warnings: string[];
+  video_url: string | null;
+  video_platform: VideoPlatform | null;
+  image_url: string | null;
+  is_favorite: boolean;
+  current_version: RecipeVersion;
+  versions: RecipeVersion[];
+}
+
+// Lean shape for the Cookbook grid -- what CookbookRecipeCard actually
+// renders, without the full ingredients/steps of every version that
+// StoredRecipe carries. Keeps list payloads small regardless of how many
+// recipes (or how many versions per recipe) the user has.
+export interface CookbookListItem {
+  id: string;
+  title: string;
+  cuisine: string;
+  servings: number;
+  total_time_minutes: number;
+  image_url: string | null;
+  is_favorite: boolean;
+  version_count: number;
+  current_version_number: number;
+}
+
+export interface UserPreferencesV2 {
+  diet: string | null;
+  avoid: string[];
+  notify_recipe_saved: boolean;
+  notify_weekly_digest: boolean;
+  notify_product_updates: boolean;
 }
 
 export interface GeneratedRecipeRun {

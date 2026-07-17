@@ -1,21 +1,27 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import { useFonts } from 'expo-font';
+import { ClerkProvider } from '@clerk/expo';
+import { tokenCache } from '@clerk/expo/token-cache';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import { AppContextProvider } from './src/navigation/AppContext';
+import { AuthCapabilityProvider } from './src/navigation/AuthCapabilityContext';
+import { ClerkAuthGate } from './src/navigation/ClerkAuthGate';
 import { defaultPreferences, getPreferences, savePreferences } from './src/storage/preferences';
 import { defaultBilling, defaultUserProfile, getBilling, getUserProfile, saveBilling, saveUserProfile } from './src/storage/account';
-import {
-  flushCookbookOutbox,
-  removeRecipeFromCookbook,
-  saveRecipeRevision as saveRecipeRevisionToCookbook,
-  saveRecipeToCookbook,
-} from './src/storage/cookbook';
 import { generateFullRecipeFromSummary, generateRecipeSummaries } from './src/ai/openai';
 import { generateRecipeSummariesViaBackend, hydrateRecipeViaBackend, isBackendEnabled } from './src/api/backend';
+import { CLERK_PUBLISHABLE_KEY } from './src/config/env';
+import { fontsToLoad } from './src/theme/fonts';
+import { applyGlobalTextDefaults } from './src/theme/globalTextDefaults';
+
+applyGlobalTextDefaults();
 import type { BillingInfo, GeneratedRecipeRun, GenerationRequest, Recipe, UserPreferences, UserProfile } from './src/types';
 
 export default function App() {
+  const [fontsLoaded] = useFonts(fontsToLoad);
   const [preferences, setPreferencesState] = useState<UserPreferences | null>(null);
   const [userProfile, setUserProfileState] = useState<UserProfile | null>(null);
   const [billing, setBillingState] = useState<BillingInfo | null>(null);
@@ -33,7 +39,6 @@ export default function App() {
       setPreferencesState(prefs);
       setUserProfileState(profile);
       setBillingState(billingData);
-      void flushCookbookOutbox();
     });
   }, []);
 
@@ -53,27 +58,10 @@ export default function App() {
     void saveBilling(next);
   };
 
-  const saveRecipe = async (recipe: Recipe) => {
-    return saveRecipeToCookbook(recipe);
-  };
-
-  const removeRecipe = async (recipeId: string) => {
-    await removeRecipeFromCookbook(recipeId);
-  };
-
   const cancelActiveGeneration = () => {
     generationAbortRef.current?.abort();
     generationAbortRef.current = null;
     setIsGenerating(false);
-  };
-
-  const saveRecipeRevision = async (params: {
-    baseRecipeId: string;
-    revisedRecipe: Recipe;
-    replaceBase?: boolean;
-    changeNote?: string;
-  }) => {
-    return saveRecipeRevisionToCookbook(params);
   };
 
   const addGeneratedRun = (run: GeneratedRecipeRun) => {
@@ -348,25 +336,43 @@ export default function App() {
       setRunRecipeError,
       removeGeneratedRun,
       removeRecipeFromGeneratedRun,
-      saveRecipe,
-      saveRecipeRevision,
-      removeRecipe,
     }),
     [preferences, userProfile, billing, generatedRuns, isGenerating],
   );
 
-  if (!preferences || !userProfile || !billing) {
+  if (!fontsLoaded || !preferences || !userProfile || !billing) {
     return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator />
-      </View>
+      <SafeAreaProvider>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <ActivityIndicator />
+        </View>
+      </SafeAreaProvider>
+    );
+  }
+
+  const appContent = (
+    <AppContextProvider value={value}>
+      <StatusBar style="dark" />
+      <AppNavigator />
+    </AppContextProvider>
+  );
+
+  // No Clerk key configured yet — keep behaving exactly as before (dev-auth
+  // header, no sign-in screen). Set EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY once a
+  // Clerk app exists to turn on real accounts.
+  if (!CLERK_PUBLISHABLE_KEY) {
+    return (
+      <SafeAreaProvider>
+        <AuthCapabilityProvider value={{ clerkEnabled: false, signOut: null }}>{appContent}</AuthCapabilityProvider>
+      </SafeAreaProvider>
     );
   }
 
   return (
-    <AppContextProvider value={value}>
-      <StatusBar style="dark" />
-      <AppNavigator onboardingComplete={preferences.onboardingComplete} />
-    </AppContextProvider>
+    <SafeAreaProvider>
+      <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY} tokenCache={tokenCache}>
+        <ClerkAuthGate>{appContent}</ClerkAuthGate>
+      </ClerkProvider>
+    </SafeAreaProvider>
   );
 }

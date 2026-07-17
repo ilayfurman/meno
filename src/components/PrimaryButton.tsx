@@ -1,6 +1,7 @@
 import React from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text } from 'react-native';
 import { colors } from '../theme/colors';
+import { fontFamily } from '../theme/fonts';
 
 interface PrimaryButtonProps {
   title: string;
@@ -32,7 +33,7 @@ const styles = StyleSheet.create({
   },
   label: {
     color: '#fff',
-    fontWeight: '700',
+    fontFamily: fontFamily.bold,
     fontSize: 48 / 2.2,
   },
 });

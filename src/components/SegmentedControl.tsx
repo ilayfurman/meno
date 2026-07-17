@@ -1,6 +1,7 @@
 import React from 'react';
 import { ScrollView, StyleSheet, Text, Pressable } from 'react-native';
 import { colors } from '../theme/colors';
+import { fontFamily } from '../theme/fonts';
 
 interface SegmentedControlProps<T extends string | number> {
   options: readonly T[];
@@ -52,7 +53,7 @@ const styles = StyleSheet.create({
   label: {
     color: colors.textSecondary,
     fontSize: 41 / 2.6,
-    fontWeight: '600',
+    fontFamily: fontFamily.semiBold,
   },
   activeSage: {
     borderColor: colors.secondaryAccent,
@@ -64,10 +65,10 @@ const styles = StyleSheet.create({
   },
   activeSageLabel: {
     color: colors.secondaryAccent,
-    fontWeight: '700',
+    fontFamily: fontFamily.bold,
   },
   activeCoralLabel: {
     color: colors.primaryAccent,
-    fontWeight: '700',
+    fontFamily: fontFamily.bold,
   },
 });

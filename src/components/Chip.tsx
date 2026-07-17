@@ -2,6 +2,7 @@ import React from 'react';
 import { Pressable, StyleSheet, Text } from 'react-native';
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
+import { fontFamily } from '../theme/fonts';
 
 interface ChipProps {
   label: string;
@@ -38,14 +39,14 @@ const styles = StyleSheet.create({
   text: {
     fontSize: typography.chip,
     color: colors.textSecondary,
-    fontWeight: '500',
+    fontFamily: fontFamily.medium,
   },
   textSelectedCoral: {
     color: colors.primaryAccent,
-    fontWeight: '700',
+    fontFamily: fontFamily.bold,
   },
   textSelectedSage: {
     color: colors.secondaryAccent,
-    fontWeight: '700',
+    fontFamily: fontFamily.bold,
   },
 });

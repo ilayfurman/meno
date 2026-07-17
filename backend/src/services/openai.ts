@@ -1,8 +1,11 @@
 import OpenAI from 'openai';
 import { env } from '../config/env.js';
-import { recipeListSchema, recipeSummaryListSchema, type RecipeSummary } from '../types/recipe.js';
+import { extractedRecipeSchema, recipeListSchema, recipeSummaryListSchema, type RecipeSummary } from '../types/recipe.js';
 
-const client = new OpenAI({ apiKey: env.OPENAI_API_KEY });
+// Groq's chat completions endpoint is OpenAI-compatible, so the official
+// `openai` SDK works as-is — just repoint baseURL and use a Groq key. Free
+// tier, no credit card: console.groq.com.
+const client = new OpenAI({ apiKey: env.GROQ_API_KEY, baseURL: 'https://api.groq.com/openai/v1' });
 
 const recipeJsonSchema = {
   type: 'object',
@@ -219,7 +222,7 @@ export async function generateRecipesWithAi(params: {
       : messages;
 
     const response = await client.chat.completions.create({
-      model: env.OPENAI_MODEL,
+      model: env.GROQ_MODEL,
       messages: payload,
       response_format: {
         type: 'json_schema',
@@ -283,7 +286,7 @@ export async function generateRecipeSummariesWithAi(params: {
       : messages;
 
     const response = await client.chat.completions.create({
-      model: env.OPENAI_MODEL,
+      model: env.GROQ_MODEL,
       messages: payload,
       response_format: {
         type: 'json_schema',
@@ -335,9 +338,122 @@ export async function hydrateRecipeFromSummaryWithAi(params: {
   });
 }
 
+const extractedRecipeJsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    title: { type: 'string' },
+    cuisine: { type: 'string' },
+    servings: { type: 'integer' },
+    total_time_minutes: { type: 'integer' },
+    difficulty: { type: 'string' },
+    short_hook: { type: 'string' },
+    dietary_tags: { type: 'array', items: { type: 'string' } },
+    allergen_warnings: { type: 'array', items: { type: 'string' } },
+    ingredients: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          name: { type: 'string' },
+          quantity: { type: 'string' },
+          unit: { type: 'string' },
+          notes: { type: ['string', 'null'] },
+          quantity_value: { type: ['number', 'null'] },
+          quantity_unit: { type: ['string', 'null'] },
+          quantity_text: { type: ['string', 'null'] },
+        },
+        required: ['name', 'quantity', 'unit', 'notes', 'quantity_value', 'quantity_unit', 'quantity_text'],
+      },
+    },
+    steps: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          idx: { type: 'integer' },
+          text: { type: 'string' },
+          timer_seconds: { type: ['integer', 'null'] },
+        },
+        required: ['idx', 'text', 'timer_seconds'],
+      },
+    },
+  },
+  required: [
+    'title',
+    'cuisine',
+    'servings',
+    'total_time_minutes',
+    'difficulty',
+    'short_hook',
+    'dietary_tags',
+    'allergen_warnings',
+    'ingredients',
+    'steps',
+  ],
+} as const;
+
+export async function structureRecipeFromText(rawText: string) {
+  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+    {
+      role: 'system',
+      content:
+        'You extract and structure a recipe from arbitrary user-supplied text (pasted from a messaging app, notes, or a PDF). Return valid JSON only, no markdown. If a field is missing from the source text, make a reasonable estimate rather than leaving it empty.',
+    },
+    {
+      role: 'user',
+      content: `Structure this recipe text into the schema:\n\n${rawText}`,
+    },
+  ];
+
+  const create = async (extraFixPrompt?: boolean) => {
+    const payload = extraFixPrompt
+      ? [
+          ...messages,
+          {
+            role: 'user' as const,
+            content: 'Fix JSON: output strictly valid schema-compliant JSON only.',
+          },
+        ]
+      : messages;
+
+    const response = await client.chat.completions.create({
+      model: env.GROQ_MODEL,
+      messages: payload,
+      response_format: {
+        type: 'json_schema',
+        json_schema: {
+          name: extraFixPrompt ? 'structured_recipe_fix' : 'structured_recipe',
+          strict: true,
+          schema: extractedRecipeJsonSchema,
+        },
+      },
+    });
+
+    const content = response.choices[0]?.message?.content;
+    if (!content) {
+      throw new Error('AI response was empty.');
+    }
+
+    return { content, usage: response.usage };
+  };
+
+  const first = await create(false);
+  try {
+    const recipe = extractedRecipeSchema.parse(JSON.parse(first.content));
+    return { recipe, usage: first.usage };
+  } catch {
+    const second = await create(true);
+    const recipe = extractedRecipeSchema.parse(JSON.parse(second.content));
+    return { recipe, usage: second.usage };
+  }
+}
+
 export async function askAgent(question: string, recipes: unknown[]) {
   const response = await client.chat.completions.create({
-    model: env.OPENAI_MODEL,
+    model: env.GROQ_MODEL,
     messages: [
       {
         role: 'system',

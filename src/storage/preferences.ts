@@ -8,7 +8,6 @@ export const defaultPreferences: UserPreferences = {
   allergies: [],
   cuisinesLiked: [],
   spiceLevel: 'med',
-  onboardingComplete: false,
 };
 
 export async function getPreferences(): Promise<UserPreferences> {

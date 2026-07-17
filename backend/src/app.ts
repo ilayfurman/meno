@@ -1,33 +1,59 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import sensible from '@fastify/sensible';
+import multipart from '@fastify/multipart';
+import { PDFParse } from 'pdf-parse';
 import { and, count, eq, gte, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { authGuard } from './plugins/auth.js';
 import { db } from './db/client.js';
-import { aiUsage, cookbookItems, generationRequests, recipeEvents, recipes } from './db/schema.js';
+import { aiUsage, generationRequests, recipeEvents } from './db/schema.js';
 import {
+  addRecipeVersionSchema,
   agentRequestSchema,
   cookbookReorderSchema,
-  cookbookSaveSchema,
+  createRecipeSchema,
   eventCreateSchema,
   generationRequestSchema,
   hydrationRequestSchema,
+  importTextSchema,
   importUrlSchema,
   recipeSummaryListSchema,
+  updateRecipePhotoSchema,
+  updateRecipeVersionSchema,
+  updateVideoLinkSchema,
   type Recipe,
 } from './types/recipe.js';
-import { askAgent, generateRecipeSummariesWithAi, generateRecipesWithAi, hydrateRecipeFromSummaryWithAi } from './services/openai.js';
 import {
+  askAgent,
+  generateRecipeSummariesWithAi,
+  generateRecipesWithAi,
+  hydrateRecipeFromSummaryWithAi,
+  structureRecipeFromText,
+} from './services/openai.js';
+import {
+  addRecipeVersion,
   createRecipeForUser,
-  ensureRecipeAndSaveToCookbook,
+  deleteRecipe,
+  deleteRecipeVersion,
+  findDuplicateBySourceUrl,
+  findDuplicateByTitle,
   getRecipeByIdForUser,
-  listCookbook,
+  getCookbookStats,
+  listCookbookCuisines,
+  listCookbookPage,
   removeFromCookbook,
   reorderCookbook,
+  saveRecipeToCookbook,
+  setCurrentVersion,
+  setFavorite,
+  setRecipePhoto,
+  setVideoLink,
+  updateRecipeVersion,
 } from './services/recipes.js';
+import { getPlan, getPreferences, updatePreferences } from './services/preferences.js';
 import { allowedImportDomains, env } from './config/env.js';
-import { importRecipeFromUrl } from './services/importer.js';
+import { extractRecipeFromJsonLd, fetchRecipePage, htmlToReadableText } from './services/importer.js';
 
 const idempotencyHeaderSchema = z.string().min(8);
 
@@ -104,13 +130,19 @@ function sendValidationError(reply: { code: (status: number) => { send: (payload
 }
 
 export function createApp() {
-  const app = Fastify({ logger: true });
+  // Default bodyLimit (1MB) is too small for a base64-encoded recipe photo
+  // JSON payload -- bump it so the photo-upload route (image_url as a data:
+  // URL) doesn't get rejected before it even reaches our own size checks.
+  const app = Fastify({ logger: true, bodyLimit: 8 * 1024 * 1024 });
 
   void app.register(cors, {
     origin: true,
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
   });
   void app.register(sensible);
+  void app.register(multipart, {
+    limits: { fileSize: env.MAX_IMPORT_RESPONSE_BYTES },
+  });
 
   app.get('/health', async () => ({ ok: true }));
 
@@ -190,7 +222,7 @@ export function createApp() {
       await db.insert(aiUsage).values({
         userId: request.auth.userId,
         endpoint: '/v1/recipes/generate',
-        model: env.OPENAI_MODEL,
+        model: env.GROQ_MODEL,
         inputTokens: ai.usage?.prompt_tokens ?? 0,
         outputTokens: ai.usage?.completion_tokens ?? 0,
         costEstimateUsd: '0.000000',
@@ -285,7 +317,7 @@ export function createApp() {
       await db.insert(aiUsage).values({
         userId: request.auth.userId,
         endpoint: '/v1/recipes/generate-summaries',
-        model: env.OPENAI_MODEL,
+        model: env.GROQ_MODEL,
         inputTokens: ai.usage?.prompt_tokens ?? 0,
         outputTokens: ai.usage?.completion_tokens ?? 0,
         costEstimateUsd: '0.000000',
@@ -331,7 +363,7 @@ export function createApp() {
       await db.insert(aiUsage).values({
         userId: request.auth.userId,
         endpoint: '/v1/recipes/hydrate-recipe',
-        model: env.OPENAI_MODEL,
+        model: env.GROQ_MODEL,
         inputTokens: ai.usage?.prompt_tokens ?? 0,
         outputTokens: ai.usage?.completion_tokens ?? 0,
         costEstimateUsd: '0.000000',
@@ -348,30 +380,131 @@ export function createApp() {
     if (!params.success) {
       return sendValidationError(reply, params.error.flatten());
     }
-
     const recipe = await getRecipeByIdForUser(params.data.id, request.auth.userId);
     if (!recipe) {
       return reply.notFound('Recipe not found');
     }
-
-    return reply.send(buildRecipePayload(recipe));
+    return reply.send({ recipe });
   });
 
-  app.get('/v1/cookbook', async (request) => {
-    const list = await listCookbook(request.auth.userId);
-    return {
-      recipes: list.map(buildRecipePayload),
-    };
-  });
-
-  app.post('/v1/cookbook/items', async (request, reply) => {
-    const parsed = cookbookSaveSchema.safeParse(request.body);
+  app.post('/v1/recipes', async (request, reply) => {
+    const parsed = createRecipeSchema.safeParse(request.body);
     if (!parsed.success) {
       return sendValidationError(reply, parsed.error.flatten());
     }
+    const recipe = await createRecipeForUser(request.auth.userId, parsed.data);
+    await saveRecipeToCookbook(request.auth.userId, recipe.id);
+    return reply.send({ recipe });
+  });
 
-    const saved = await ensureRecipeAndSaveToCookbook(request.auth.userId, parsed.data.recipe);
-    return { saved };
+  app.post('/v1/recipes/:id/versions', async (request, reply) => {
+    const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
+    const body = addRecipeVersionSchema.safeParse(request.body);
+    if (!params.success) return sendValidationError(reply, params.error.flatten());
+    if (!body.success) return sendValidationError(reply, body.error.flatten());
+
+    const recipe = await addRecipeVersion(params.data.id, request.auth.userId, body.data);
+    if (!recipe) return reply.notFound('Recipe not found');
+    return reply.send({ recipe });
+  });
+
+  app.patch('/v1/recipes/:id/versions/:versionId', async (request, reply) => {
+    const params = z.object({ id: z.string().uuid(), versionId: z.string().uuid() }).safeParse(request.params);
+    const body = updateRecipeVersionSchema.safeParse(request.body);
+    if (!params.success) return sendValidationError(reply, params.error.flatten());
+    if (!body.success) return sendValidationError(reply, body.error.flatten());
+
+    const recipe = await updateRecipeVersion(params.data.id, request.auth.userId, params.data.versionId, body.data);
+    if (!recipe) return reply.notFound('Recipe or version not found');
+    return reply.send({ recipe });
+  });
+
+  app.patch('/v1/recipes/:id/current-version', async (request, reply) => {
+    const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
+    const body = z.object({ version_id: z.string().uuid() }).safeParse(request.body);
+    if (!params.success) return sendValidationError(reply, params.error.flatten());
+    if (!body.success) return sendValidationError(reply, body.error.flatten());
+
+    const recipe = await setCurrentVersion(params.data.id, request.auth.userId, body.data.version_id);
+    if (!recipe) return reply.notFound('Recipe or version not found');
+    return reply.send({ recipe });
+  });
+
+  app.delete('/v1/recipes/:id/versions/:versionId', async (request, reply) => {
+    const params = z.object({ id: z.string().uuid(), versionId: z.string().uuid() }).safeParse(request.params);
+    if (!params.success) return sendValidationError(reply, params.error.flatten());
+
+    const result = await deleteRecipeVersion(params.data.id, request.auth.userId, params.data.versionId);
+    if (!result.deletedRecipe && !result.recipe) {
+      return reply.notFound('Recipe not found');
+    }
+    return reply.send(result);
+  });
+
+  app.delete('/v1/recipes/:id', async (request, reply) => {
+    const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
+    if (!params.success) return sendValidationError(reply, params.error.flatten());
+
+    const deleted = await deleteRecipe(params.data.id, request.auth.userId);
+    if (!deleted) return reply.notFound('Recipe not found');
+    return reply.send({ ok: true });
+  });
+
+  app.put('/v1/recipes/:id/video-link', async (request, reply) => {
+    const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
+    const body = updateVideoLinkSchema.safeParse(request.body);
+    if (!params.success) return sendValidationError(reply, params.error.flatten());
+    if (!body.success) return sendValidationError(reply, body.error.flatten());
+
+    const recipe = await setVideoLink(params.data.id, request.auth.userId, body.data.video_url);
+    if (!recipe) return reply.notFound('Recipe not found');
+    return reply.send({ recipe });
+  });
+
+  app.put('/v1/recipes/:id/photo', async (request, reply) => {
+    const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
+    const body = updateRecipePhotoSchema.safeParse(request.body);
+    if (!params.success) return sendValidationError(reply, params.error.flatten());
+    if (!body.success) return sendValidationError(reply, body.error.flatten());
+
+    const recipe = await setRecipePhoto(params.data.id, request.auth.userId, body.data.image_url);
+    if (!recipe) return reply.notFound('Recipe not found');
+    return reply.send({ recipe });
+  });
+
+  app.put('/v1/cookbook/items/:recipeId/favorite', async (request, reply) => {
+    const params = z.object({ recipeId: z.string().uuid() }).safeParse(request.params);
+    const body = z.object({ is_favorite: z.boolean() }).safeParse(request.body);
+    if (!params.success) return sendValidationError(reply, params.error.flatten());
+    if (!body.success) return sendValidationError(reply, body.error.flatten());
+
+    await setFavorite(request.auth.userId, params.data.recipeId, body.data.is_favorite);
+    return reply.send({ ok: true });
+  });
+
+  app.get('/v1/cookbook', async (request, reply) => {
+    const query = z
+      .object({
+        limit: z.coerce.number().int().min(1).max(100).default(24),
+        offset: z.coerce.number().int().min(0).default(0),
+        search: z.string().trim().max(200).optional(),
+        filter: z.string().trim().max(100).optional(),
+        sort: z.enum(['recent', 'title_asc', 'time_asc', 'time_desc']).default('recent'),
+      })
+      .safeParse(request.query);
+    if (!query.success) return sendValidationError(reply, query.error.flatten());
+
+    const { items, hasMore } = await listCookbookPage(request.auth.userId, query.data);
+    return { recipes: items, has_more: hasMore };
+  });
+
+  app.get('/v1/cookbook/stats', async (request) => {
+    return getCookbookStats(request.auth.userId);
+  });
+
+  app.get('/v1/cookbook/cuisines', async (request) => {
+    const cuisines = await listCookbookCuisines(request.auth.userId);
+    return { cuisines };
   });
 
   app.patch('/v1/cookbook/items/reorder', async (request, reply) => {
@@ -379,7 +512,6 @@ export function createApp() {
     if (!parsed.success) {
       return sendValidationError(reply, parsed.error.flatten());
     }
-
     await reorderCookbook(request.auth.userId, parsed.data.recipeIds);
     return { ok: true };
   });
@@ -389,9 +521,29 @@ export function createApp() {
     if (!parsed.success) {
       return sendValidationError(reply, parsed.error.flatten());
     }
-
     await removeFromCookbook(request.auth.userId, parsed.data.recipeId);
     return { ok: true };
+  });
+
+  app.get('/v1/preferences', async (request) => {
+    const preferences = await getPreferences(request.auth.userId);
+    const plan = await getPlan(request.auth.userId);
+    return { preferences, plan };
+  });
+
+  app.patch('/v1/preferences', async (request, reply) => {
+    const parsed = z
+      .object({
+        diet: z.string().nullable().optional(),
+        avoid: z.array(z.string()).optional(),
+        notify_recipe_saved: z.boolean().optional(),
+        notify_weekly_digest: z.boolean().optional(),
+        notify_product_updates: z.boolean().optional(),
+      })
+      .safeParse(request.body);
+    if (!parsed.success) return sendValidationError(reply, parsed.error.flatten());
+    const preferences = await updatePreferences(request.auth.userId, parsed.data);
+    return { preferences };
   });
 
   app.post('/v1/recipes/events', async (request, reply) => {
@@ -423,7 +575,7 @@ export function createApp() {
     await db.insert(aiUsage).values({
       userId: request.auth.userId,
       endpoint: '/v1/recipes/agent',
-      model: env.OPENAI_MODEL,
+      model: env.GROQ_MODEL,
       inputTokens: result.usage?.prompt_tokens ?? 0,
       outputTokens: result.usage?.completion_tokens ?? 0,
       costEstimateUsd: '0.000000',
@@ -438,19 +590,154 @@ export function createApp() {
       return sendValidationError(reply, parsed.error.flatten());
     }
 
-    const imported = await importRecipeFromUrl(parsed.data.url, allowedImportDomains);
-    const created = await createRecipeForUser(request.auth.userId, {
-      ...imported,
-      id: undefined,
-      completion_state: 'full',
-      sourceType: 'imported',
-      sourceUrl: imported.source_url,
-      sourceDomain: imported.source_domain,
+    const page = await fetchRecipePage(parsed.data.url, allowedImportDomains);
+
+    // Free path first: most established recipe sites embed schema.org
+    // Recipe JSON-LD, which we can parse directly with zero AI cost. Only
+    // fall back to the LLM ("read the page and extract the recipe") when
+    // that markup isn't there -- keeps imports fast/free on the sites that
+    // support it while still working on ones that don't.
+    const imported = extractRecipeFromJsonLd(page);
+    if (imported) {
+      const candidate = {
+        title: imported.title,
+        cuisine: imported.cuisine,
+        servings: imported.servings,
+        total_time_minutes: imported.total_time_minutes,
+        difficulty: imported.difficulty,
+        short_hook: imported.short_hook,
+        dietary_tags: imported.dietary_tags,
+        allergen_warnings: imported.allergen_warnings,
+        ingredients: imported.ingredients,
+        steps: imported.steps,
+        source_type: 'link' as const,
+        source_url: imported.source_url,
+      };
+      if (!parsed.data.force) {
+        const duplicate = await findDuplicateBySourceUrl(request.auth.userId, imported.source_url);
+        if (duplicate) {
+          return { duplicate, candidate };
+        }
+      }
+      const recipe = await createRecipeForUser(request.auth.userId, candidate);
+      await saveRecipeToCookbook(request.auth.userId, recipe.id);
+      return { recipe };
+    }
+
+    const pageText = htmlToReadableText(page.html);
+    const extracted = await structureRecipeFromText(pageText);
+    const candidate = { ...extracted.recipe, source_type: 'link' as const, source_url: page.url };
+    if (!parsed.data.force) {
+      const duplicate = await findDuplicateBySourceUrl(request.auth.userId, page.url);
+      if (duplicate) {
+        await db.insert(aiUsage).values({
+          userId: request.auth.userId,
+          endpoint: '/v1/recipes/import-url',
+          model: env.GROQ_MODEL,
+          inputTokens: extracted.usage?.prompt_tokens ?? 0,
+          outputTokens: extracted.usage?.completion_tokens ?? 0,
+          costEstimateUsd: '0.000000',
+        });
+        return { duplicate, candidate };
+      }
+    }
+    const recipe = await createRecipeForUser(request.auth.userId, candidate);
+    await saveRecipeToCookbook(request.auth.userId, recipe.id);
+
+    await db.insert(aiUsage).values({
+      userId: request.auth.userId,
+      endpoint: '/v1/recipes/import-url',
+      model: env.GROQ_MODEL,
+      inputTokens: extracted.usage?.prompt_tokens ?? 0,
+      outputTokens: extracted.usage?.completion_tokens ?? 0,
+      costEstimateUsd: '0.000000',
     });
 
-    await ensureRecipeAndSaveToCookbook(request.auth.userId, created);
+    return { recipe };
+  });
 
-    return { recipe: buildRecipePayload(created) };
+  app.post('/v1/recipes/import-text', async (request, reply) => {
+    const parsed = importTextSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return sendValidationError(reply, parsed.error.flatten());
+    }
+
+    const extracted = await structureRecipeFromText(parsed.data.text);
+    const candidate = { ...extracted.recipe, source_type: 'text' as const };
+
+    await db.insert(aiUsage).values({
+      userId: request.auth.userId,
+      endpoint: '/v1/recipes/import-text',
+      model: env.GROQ_MODEL,
+      inputTokens: extracted.usage?.prompt_tokens ?? 0,
+      outputTokens: extracted.usage?.completion_tokens ?? 0,
+      costEstimateUsd: '0.000000',
+    });
+
+    if (!parsed.data.force) {
+      const duplicate = await findDuplicateByTitle(request.auth.userId, candidate.title);
+      if (duplicate) {
+        return { duplicate, candidate };
+      }
+    }
+
+    const recipe = await createRecipeForUser(request.auth.userId, candidate);
+    await saveRecipeToCookbook(request.auth.userId, recipe.id);
+    return { recipe };
+  });
+
+  app.post('/v1/recipes/import-pdf', async (request, reply) => {
+    const file = await request.file();
+    if (!file) {
+      return reply.code(400).send({ error: 'No file uploaded.' });
+    }
+    if (file.mimetype !== 'application/pdf') {
+      return reply.code(400).send({ error: 'Only PDF files are supported.' });
+    }
+
+    const buffer = await file.toBuffer();
+    const parser = new PDFParse({ data: buffer });
+    let text: string;
+    try {
+      const result = await parser.getText();
+      text = result.text;
+    } finally {
+      await parser.destroy();
+    }
+
+    if (!text.trim()) {
+      return reply.code(400).send({ error: 'Could not extract any text from this PDF.' });
+    }
+
+    // request.file() surfaces any other multipart fields sent alongside the
+    // file on file.fields -- each as { value } -- rather than as a typed
+    // request.body the way a plain JSON route would.
+    const forceField = (file.fields as Record<string, { value?: unknown } | undefined>).force;
+    const force = typeof forceField?.value === 'string' && forceField.value === 'true';
+
+    const extracted = await structureRecipeFromText(text);
+    const candidate = { ...extracted.recipe, source_type: 'pdf' as const };
+
+    await db.insert(aiUsage).values({
+      userId: request.auth.userId,
+      endpoint: '/v1/recipes/import-pdf',
+      model: env.GROQ_MODEL,
+      inputTokens: extracted.usage?.prompt_tokens ?? 0,
+      outputTokens: extracted.usage?.completion_tokens ?? 0,
+      costEstimateUsd: '0.000000',
+    });
+
+    if (!force) {
+      const duplicate = await findDuplicateByTitle(request.auth.userId, candidate.title);
+      if (duplicate) {
+        return { duplicate, candidate };
+      }
+    }
+
+    const recipe = await createRecipeForUser(request.auth.userId, candidate);
+    await saveRecipeToCookbook(request.auth.userId, recipe.id);
+
+    return { recipe };
   });
 
   app.get('/v1/explore', async (request) => {
@@ -466,9 +753,8 @@ export function createApp() {
         r.short_hook,
         r.dietary_tags,
         r.allergen_warnings,
-        r.ingredients,
-        r.steps,
-        r.substitutions,
+        v.ingredients,
+        v.steps,
         sum(
           case
             when e.event_type = 'save' then 3
@@ -478,9 +764,10 @@ export function createApp() {
           end
         ) as score
       from recipes r
+      left join recipe_versions v on v.id = r.current_version_id
       left join recipe_events e on e.recipe_id = r.id and e.event_ts >= ${sevenDaysAgo}
       where r.owner_user_id is null or r.owner_user_id = ${request.auth.userId}
-      group by r.id
+      group by r.id, v.ingredients, v.steps
       order by score desc nulls last, r.created_at desc
       limit 30
     `);
