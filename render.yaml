@@ -1,0 +1,54 @@
+# Render Blueprint for the Meno backend.
+#
+# This deploys only backend/ (the Fastify API) — the mobile app itself isn't
+# deployed anywhere, it's just pointed at whatever URL this service ends up
+# with via EXPO_PUBLIC_API_BASE_URL in the root .env.
+#
+# `sync: false` marks a variable as "required, but set its real value by hand
+# in the Render dashboard" -- these are secrets (DB connection string, API
+# keys) that must never be committed to the repo. Everything else here has a
+# concrete default so the blueprint can create the service without any
+# extra prompts.
+#
+# To use: Render dashboard -> New -> Blueprint -> select this repo. After
+# the service is created, fill in the `sync: false` values under
+# Environment before the first deploy (or it'll boot-crash on missing envs,
+# same as running the backend locally without a .env).
+services:
+  - type: web
+    name: meno-backend
+    runtime: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Real Bearer tokens from Clerk are always verified regardless of this
+      # setting (see src/plugins/auth.ts) -- this only controls whether
+      # requests with NO Authorization header get silently treated as a
+      # fallback dev user. Must be false once this is public, or anyone can
+      # hit the API unauthenticated as that fallback identity.
+      - key: ALLOW_DEV_AUTH
+        value: false
+      - key: DATABASE_URL
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        value: openai/gpt-oss-120b
+      - key: CLERK_SECRET_KEY
+        sync: false
+      - key: ALLOWED_IMPORT_DOMAINS
+        value: ''
+      - key: GEN_RATE_LIMIT_PER_MINUTE
+        value: '12'
+      - key: GEN_DAILY_LIMIT
+        value: '100'
+      - key: MAX_AGENT_RECIPES
+        value: '8'
+      - key: MAX_IMPORT_RESPONSE_BYTES
+        value: '5242880'
+      - key: REQUEST_TIMEOUT_MS
+        value: '10000'
