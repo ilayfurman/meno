@@ -3,6 +3,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { MainTabsScreen } from '../screens/MainTabsScreen';
 import { RecipeDetailScreen } from '../screens/RecipeDetailScreen';
+import { EditRecipeScreen } from '../screens/EditRecipeScreen';
 import { QuickGenerateScreen } from '../screens/QuickGenerateScreen';
 import { NotificationsScreen } from '../screens/profile/NotificationsScreen';
 import { HelpCenterScreen } from '../screens/profile/HelpCenterScreen';
@@ -27,6 +28,7 @@ export function AppNavigator() {
       >
         <Stack.Screen name="MainTabs" component={MainTabsScreen} options={{ headerShown: false }} />
         <Stack.Screen name="RecipeDetail" component={RecipeDetailScreen} options={{ headerShown: false, presentation: 'modal' }} />
+        <Stack.Screen name="EditRecipe" component={EditRecipeScreen} options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="QuickGenerate" component={QuickGenerateScreen} options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="ProfileNotifications" component={NotificationsScreen} options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="ProfileHelpCenter" component={HelpCenterScreen} options={{ headerShown: false, presentation: 'modal' }} />

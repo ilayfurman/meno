@@ -26,11 +26,7 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
-      },
-      "permissions": [
-        "android.permission.USE_BIOMETRIC",
-        "android.permission.USE_FINGERPRINT"
-      ]
+      }
     },
     "web": {
       "bundler": "metro",
@@ -42,9 +38,9 @@
       "expo-secure-store",
       "@clerk/expo",
       [
-        "expo-local-authentication",
+        "expo-image-picker",
         {
-          "faceIDPermission": "Meno uses Face ID to unlock the app quickly and securely."
+          "photosPermission": "Meno uses your photo library so you can add a picture to your saved recipes."
         }
       ]
     ],

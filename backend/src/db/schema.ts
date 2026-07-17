@@ -46,6 +46,7 @@ export const recipes = pgTable(
     dietaryTags: jsonb('dietary_tags').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
     allergenWarnings: jsonb('allergen_warnings').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
     currentVersionId: uuid('current_version_id'),
+    imageUrl: text('image_url'),
     videoUrl: text('video_url'),
     videoPlatform: varchar('video_platform', { length: 16 }),
     sourceType: varchar('source_type', { length: 32 }).notNull().default('generated'),

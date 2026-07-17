@@ -19,6 +19,8 @@ import {
   importTextSchema,
   importUrlSchema,
   recipeSummaryListSchema,
+  updateRecipePhotoSchema,
+  updateRecipeVersionSchema,
   updateVideoLinkSchema,
   type Recipe,
 } from './types/recipe.js';
@@ -37,13 +39,17 @@ import {
   findDuplicateBySourceUrl,
   findDuplicateByTitle,
   getRecipeByIdForUser,
-  listCookbook,
+  getCookbookStats,
+  listCookbookCuisines,
+  listCookbookPage,
   removeFromCookbook,
   reorderCookbook,
   saveRecipeToCookbook,
   setCurrentVersion,
   setFavorite,
+  setRecipePhoto,
   setVideoLink,
+  updateRecipeVersion,
 } from './services/recipes.js';
 import { getPlan, getPreferences, updatePreferences } from './services/preferences.js';
 import { allowedImportDomains, env } from './config/env.js';
@@ -124,7 +130,10 @@ function sendValidationError(reply: { code: (status: number) => { send: (payload
 }
 
 export function createApp() {
-  const app = Fastify({ logger: true });
+  // Default bodyLimit (1MB) is too small for a base64-encoded recipe photo
+  // JSON payload -- bump it so the photo-upload route (image_url as a data:
+  // URL) doesn't get rejected before it even reaches our own size checks.
+  const app = Fastify({ logger: true, bodyLimit: 8 * 1024 * 1024 });
 
   void app.register(cors, {
     origin: true,
@@ -399,6 +408,17 @@ export function createApp() {
     return reply.send({ recipe });
   });
 
+  app.patch('/v1/recipes/:id/versions/:versionId', async (request, reply) => {
+    const params = z.object({ id: z.string().uuid(), versionId: z.string().uuid() }).safeParse(request.params);
+    const body = updateRecipeVersionSchema.safeParse(request.body);
+    if (!params.success) return sendValidationError(reply, params.error.flatten());
+    if (!body.success) return sendValidationError(reply, body.error.flatten());
+
+    const recipe = await updateRecipeVersion(params.data.id, request.auth.userId, params.data.versionId, body.data);
+    if (!recipe) return reply.notFound('Recipe or version not found');
+    return reply.send({ recipe });
+  });
+
   app.patch('/v1/recipes/:id/current-version', async (request, reply) => {
     const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
     const body = z.object({ version_id: z.string().uuid() }).safeParse(request.body);
@@ -441,6 +461,17 @@ export function createApp() {
     return reply.send({ recipe });
   });
 
+  app.put('/v1/recipes/:id/photo', async (request, reply) => {
+    const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
+    const body = updateRecipePhotoSchema.safeParse(request.body);
+    if (!params.success) return sendValidationError(reply, params.error.flatten());
+    if (!body.success) return sendValidationError(reply, body.error.flatten());
+
+    const recipe = await setRecipePhoto(params.data.id, request.auth.userId, body.data.image_url);
+    if (!recipe) return reply.notFound('Recipe not found');
+    return reply.send({ recipe });
+  });
+
   app.put('/v1/cookbook/items/:recipeId/favorite', async (request, reply) => {
     const params = z.object({ recipeId: z.string().uuid() }).safeParse(request.params);
     const body = z.object({ is_favorite: z.boolean() }).safeParse(request.body);
@@ -451,9 +482,29 @@ export function createApp() {
     return reply.send({ ok: true });
   });
 
-  app.get('/v1/cookbook', async (request) => {
-    const list = await listCookbook(request.auth.userId);
-    return { recipes: list };
+  app.get('/v1/cookbook', async (request, reply) => {
+    const query = z
+      .object({
+        limit: z.coerce.number().int().min(1).max(100).default(24),
+        offset: z.coerce.number().int().min(0).default(0),
+        search: z.string().trim().max(200).optional(),
+        filter: z.string().trim().max(100).optional(),
+        sort: z.enum(['recent', 'title_asc', 'time_asc', 'time_desc']).default('recent'),
+      })
+      .safeParse(request.query);
+    if (!query.success) return sendValidationError(reply, query.error.flatten());
+
+    const { items, hasMore } = await listCookbookPage(request.auth.userId, query.data);
+    return { recipes: items, has_more: hasMore };
+  });
+
+  app.get('/v1/cookbook/stats', async (request) => {
+    return getCookbookStats(request.auth.userId);
+  });
+
+  app.get('/v1/cookbook/cuisines', async (request) => {
+    const cuisines = await listCookbookCuisines(request.auth.userId);
+    return { cuisines };
   });
 
   app.patch('/v1/cookbook/items/reorder', async (request, reply) => {

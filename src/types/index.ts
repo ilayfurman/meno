@@ -141,9 +141,26 @@ export interface StoredRecipe {
   allergen_warnings: string[];
   video_url: string | null;
   video_platform: VideoPlatform | null;
+  image_url: string | null;
   is_favorite: boolean;
   current_version: RecipeVersion;
   versions: RecipeVersion[];
+}
+
+// Lean shape for the Cookbook grid -- what CookbookRecipeCard actually
+// renders, without the full ingredients/steps of every version that
+// StoredRecipe carries. Keeps list payloads small regardless of how many
+// recipes (or how many versions per recipe) the user has.
+export interface CookbookListItem {
+  id: string;
+  title: string;
+  cuisine: string;
+  servings: number;
+  total_time_minutes: number;
+  image_url: string | null;
+  is_favorite: boolean;
+  version_count: number;
+  current_version_number: number;
 }
 
 export interface UserPreferencesV2 {

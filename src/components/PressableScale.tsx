@@ -6,10 +6,18 @@ interface PressableScaleProps {
   onLongPress?: () => void;
   scaleTo?: number;
   style?: StyleProp<ViewStyle>;
+  disabled?: boolean;
   children: React.ReactNode;
 }
 
-export function PressableScale({ onPress, onLongPress, scaleTo = 0.95, style, children }: PressableScaleProps) {
+export function PressableScale({
+  onPress,
+  onLongPress,
+  scaleTo = 0.95,
+  style,
+  disabled,
+  children,
+}: PressableScaleProps) {
   const scale = useRef(new Animated.Value(1)).current;
 
   const animateTo = (value: number) => {
@@ -27,8 +35,11 @@ export function PressableScale({ onPress, onLongPress, scaleTo = 0.95, style, ch
       onLongPress={onLongPress}
       onPressIn={() => animateTo(scaleTo)}
       onPressOut={() => animateTo(1)}
+      disabled={disabled}
     >
-      <Animated.View style={[style, { transform: [{ scale }] }]}>{children}</Animated.View>
+      <Animated.View style={[style, disabled && { opacity: 0.6 }, { transform: [{ scale }] }]}>
+        {children}
+      </Animated.View>
     </Pressable>
   );
 }

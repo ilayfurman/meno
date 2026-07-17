@@ -6,6 +6,7 @@ export type MainTabParamList = {
 export type RootStackParamList = {
   MainTabs: undefined;
   RecipeDetail: { recipeId: string };
+  EditRecipe: { recipeId: string };
   QuickGenerate: undefined;
   ProfileNotifications: undefined;
   ProfileHelpCenter: undefined;

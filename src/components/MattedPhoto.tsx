@@ -1,6 +1,7 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { Image } from 'react-native';
+import { PressableScale } from './PressableScale';
 import { colors } from '../theme/colors';
 import { fontFamily } from '../theme/fonts';
 import { elevation } from '../theme/elevation';
@@ -9,9 +10,14 @@ interface MattedPhotoProps {
   uri?: string | null;
   aspectRatio?: number;
   borderRadius?: number;
+  // When provided, an edit button is overlaid on the photo (bottom-right)
+  // so the user can attach/replace a picture. `editing` shows a spinner in
+  // its place while an upload is in flight.
+  onEditPress?: () => void;
+  editing?: boolean;
 }
 
-export function MattedPhoto({ uri, aspectRatio = 1, borderRadius = 18 }: MattedPhotoProps) {
+export function MattedPhoto({ uri, aspectRatio = 1, borderRadius = 18, onEditPress, editing }: MattedPhotoProps) {
   return (
     // Shadow lives on the outer wrapper (overflow must stay visible for it to
     // render); the inner `mat` view keeps `overflow: hidden` so the image/
@@ -26,6 +32,22 @@ export function MattedPhoto({ uri, aspectRatio = 1, borderRadius = 18 }: MattedP
           </View>
         )}
       </View>
+      {onEditPress ? (
+        // Positioning (absolute/bottom/right) has to live on this plain
+        // wrapping View, not on PressableScale itself -- PressableScale
+        // forwards `style` to its inner Animated.View, not the outer
+        // Pressable that actually participates in the parent's layout, so
+        // layout-critical styles passed directly to it are silently dropped.
+        <View style={styles.editButtonWrap}>
+          <PressableScale onPress={onEditPress} style={styles.editButton} scaleTo={0.92} disabled={editing}>
+            {editing ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Text style={styles.editButtonText}>{uri ? '✎' : '+'}</Text>
+            )}
+          </PressableScale>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -57,5 +79,23 @@ const styles = StyleSheet.create({
     fontFamily: fontFamily.semiBold,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+  },
+  editButtonWrap: {
+    position: 'absolute',
+    bottom: 14,
+    right: 14,
+  },
+  editButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(28,26,23,0.72)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  editButtonText: {
+    color: '#fff',
+    fontSize: 17,
+    fontFamily: fontFamily.bold,
   },
 });

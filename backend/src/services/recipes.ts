@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { cookbookItems, recipeVersions, recipes } from '../db/schema.js';
 import type { RecipeVersion, StoredRecipe } from '../types/recipe.js';
@@ -60,6 +60,7 @@ async function assembleStoredRecipe(
     allergen_warnings: recipeRow.allergenWarnings as string[],
     video_url: recipeRow.videoUrl,
     video_platform: recipeRow.videoPlatform as StoredRecipe['video_platform'],
+    image_url: recipeRow.imageUrl,
     is_favorite: isFavorite,
     current_version: current,
     versions,
@@ -259,6 +260,58 @@ export async function addRecipeVersion(
   return assembleStoredRecipe(recipeRow, await getFavoriteFlag(userId, recipeId));
 }
 
+export interface UpdateVersionInput {
+  ingredients: unknown;
+  steps: unknown;
+  change_note?: string | null;
+}
+
+/**
+ * Edits a version's content in place -- no new version row, no version
+ * number bump. This is the "modify this version" path from the edit
+ * screen, as opposed to addRecipeVersion's "save as a new version" path.
+ */
+export async function updateRecipeVersion(
+  recipeId: string,
+  userId: string,
+  versionId: string,
+  input: UpdateVersionInput,
+): Promise<StoredRecipe | null> {
+  const recipeRow = await db.transaction(async (tx) => {
+    const [existing] = await tx
+      .select()
+      .from(recipes)
+      .where(and(eq(recipes.id, recipeId), or(isNull(recipes.ownerUserId), eq(recipes.ownerUserId, userId))))
+      .limit(1);
+    if (!existing) {
+      return null;
+    }
+
+    const updatedRows = await tx
+      .update(recipeVersions)
+      .set({
+        ingredients: input.ingredients,
+        steps: input.steps,
+        changeNote: input.change_note ?? null,
+      })
+      .where(and(eq(recipeVersions.id, versionId), eq(recipeVersions.recipeId, recipeId)))
+      .returning({ id: recipeVersions.id });
+    if (updatedRows.length === 0) {
+      return null;
+    }
+
+    await tx.update(recipes).set({ updatedAt: new Date() }).where(eq(recipes.id, recipeId));
+
+    const [refreshed] = await tx.select().from(recipes).where(eq(recipes.id, recipeId)).limit(1);
+    return refreshed ?? null;
+  });
+
+  if (!recipeRow) {
+    return null;
+  }
+  return assembleStoredRecipe(recipeRow, await getFavoriteFlag(userId, recipeId));
+}
+
 export async function setCurrentVersion(
   recipeId: string,
   userId: string,
@@ -381,15 +434,157 @@ export async function saveRecipeToCookbook(userId: string, recipeId: string): Pr
   return true;
 }
 
-export async function listCookbook(userId: string): Promise<StoredRecipe[]> {
+export interface CookbookListItem {
+  id: string;
+  title: string;
+  cuisine: string;
+  servings: number;
+  total_time_minutes: number;
+  image_url: string | null;
+  is_favorite: boolean;
+  version_count: number;
+  current_version_number: number;
+}
+
+export interface CookbookQueryParams {
+  limit: number;
+  offset: number;
+  // Title substring match, case-insensitive.
+  search?: string;
+  // 'all' | 'favorites' | a cuisine name -- mirrors the frontend's
+  // CookbookFilter type. Anything other than 'favorites'/'all'/undefined is
+  // treated as an exact cuisine match.
+  filter?: string;
+  sort?: 'recent' | 'title_asc' | 'time_asc' | 'time_desc';
+}
+
+// Deliberately lean: the grid only ever shows title/cuisine/time/favorite/
+// photo/version-badge, never the full ingredients+steps of every version of
+// every recipe. The old listCookbook() below built a full StoredRecipe per
+// row via assembleStoredRecipe, which meant one extra query PER RECIPE (an
+// N+1) just to fetch version history nobody was displaying -- fine at a
+// handful of recipes, not at a couple hundred. This does the whole page in a
+// constant 1-3 queries no matter how many recipes are in it.
+//
+// Search/filter/sort all run in this query (server-side), not against
+// whatever happens to already be loaded on the client -- so results are
+// always correct across the user's whole cookbook, and the client only ever
+// has to render (and hold in memory) one page of the CURRENT filtered view
+// at a time, the same way search works in basically every app with a list
+// bigger than a screenful.
+export async function listCookbookPage(
+  userId: string,
+  { limit, offset, search, filter, sort = 'recent' }: CookbookQueryParams,
+): Promise<{ items: CookbookListItem[]; hasMore: boolean }> {
+  const conditions: SQL[] = [eq(cookbookItems.userId, userId), eq(cookbookItems.isArchived, false)];
+
+  if (search && search.trim()) {
+    conditions.push(ilike(recipes.title, `%${search.trim()}%`));
+  }
+  if (filter === 'favorites') {
+    conditions.push(eq(cookbookItems.isFavorite, true));
+  } else if (filter && filter !== 'all') {
+    conditions.push(eq(recipes.cuisine, filter));
+  }
+
+  const orderBy =
+    sort === 'title_asc'
+      ? asc(sql`lower(${recipes.title})`)
+      : sort === 'time_asc'
+        ? asc(recipes.totalTimeMinutes)
+        : sort === 'time_desc'
+          ? desc(recipes.totalTimeMinutes)
+          : asc(cookbookItems.orderIndex);
+
+  // Ask for one more row than requested so we can tell whether another page
+  // exists without a separate COUNT(*) query.
   const rows = await db
-    .select({ recipe: recipes, isFavorite: cookbookItems.isFavorite, orderIndex: cookbookItems.orderIndex })
+    .select({
+      id: recipes.id,
+      title: recipes.title,
+      cuisine: recipes.cuisine,
+      servings: recipes.servings,
+      totalTimeMinutes: recipes.totalTimeMinutes,
+      imageUrl: recipes.imageUrl,
+      currentVersionId: recipes.currentVersionId,
+      isFavorite: cookbookItems.isFavorite,
+    })
+    .from(cookbookItems)
+    .innerJoin(recipes, eq(cookbookItems.recipeId, recipes.id))
+    .where(and(...conditions))
+    .orderBy(orderBy)
+    .limit(limit + 1)
+    .offset(offset);
+
+  const hasMore = rows.length > limit;
+  const pageRows = hasMore ? rows.slice(0, limit) : rows;
+
+  if (pageRows.length === 0) {
+    return { items: [], hasMore: false };
+  }
+
+  const recipeIds = pageRows.map((row) => row.id);
+
+  const versionCountRows = await db
+    .select({ recipeId: recipeVersions.recipeId, count: sql<number>`count(*)` })
+    .from(recipeVersions)
+    .where(inArray(recipeVersions.recipeId, recipeIds))
+    .groupBy(recipeVersions.recipeId);
+  const versionCountByRecipeId = new Map(versionCountRows.map((row) => [row.recipeId, Number(row.count)]));
+
+  const currentVersionIds = pageRows
+    .map((row) => row.currentVersionId)
+    .filter((id): id is string => Boolean(id));
+  const currentVersionRows = currentVersionIds.length
+    ? await db
+        .select({ id: recipeVersions.id, versionNumber: recipeVersions.versionNumber })
+        .from(recipeVersions)
+        .where(inArray(recipeVersions.id, currentVersionIds))
+    : [];
+  const versionNumberByVersionId = new Map(currentVersionRows.map((row) => [row.id, row.versionNumber]));
+
+  const items: CookbookListItem[] = pageRows.map((row) => ({
+    id: row.id,
+    title: row.title,
+    cuisine: row.cuisine,
+    servings: row.servings,
+    total_time_minutes: row.totalTimeMinutes,
+    image_url: row.imageUrl,
+    is_favorite: row.isFavorite,
+    version_count: versionCountByRecipeId.get(row.id) ?? 1,
+    current_version_number: row.currentVersionId ? versionNumberByVersionId.get(row.currentVersionId) ?? 1 : 1,
+  }));
+
+  return { items, hasMore };
+}
+
+// The cuisine filter pills need every distinct cuisine in the user's WHOLE
+// cookbook, not just whatever page happens to be loaded -- otherwise a pill
+// for a cuisine you haven't scrolled to yet would just never show up.
+// Separate cheap query rather than deriving it from listCookbookPage's rows.
+export async function listCookbookCuisines(userId: string): Promise<string[]> {
+  const rows = await db
+    .selectDistinct({ cuisine: recipes.cuisine })
     .from(cookbookItems)
     .innerJoin(recipes, eq(cookbookItems.recipeId, recipes.id))
     .where(and(eq(cookbookItems.userId, userId), eq(cookbookItems.isArchived, false)))
-    .orderBy(asc(cookbookItems.orderIndex));
+    .orderBy(asc(recipes.cuisine));
+  return rows.map((row) => row.cuisine);
+}
 
-  return Promise.all(rows.map((row) => assembleStoredRecipe(row.recipe, row.isFavorite)));
+// Cheap aggregate query for the Profile screen's "N recipes / N favorites"
+// summary -- deliberately separate from listCookbookPage so that screen
+// doesn't need to page through the user's entire cookbook just to count it.
+export async function getCookbookStats(userId: string): Promise<{ total: number; favorites: number }> {
+  const [row] = await db
+    .select({
+      total: sql<number>`count(*)`,
+      favorites: sql<number>`count(*) filter (where ${cookbookItems.isFavorite})`,
+    })
+    .from(cookbookItems)
+    .where(and(eq(cookbookItems.userId, userId), eq(cookbookItems.isArchived, false)));
+
+  return { total: Number(row?.total ?? 0), favorites: Number(row?.favorites ?? 0) };
 }
 
 export async function setFavorite(userId: string, recipeId: string, isFavorite: boolean): Promise<void> {
@@ -407,6 +602,20 @@ export async function setVideoLink(
   const [updated] = await db
     .update(recipes)
     .set({ videoUrl, videoPlatform: detectVideoPlatform(videoUrl), updatedAt: new Date() })
+    .where(and(eq(recipes.id, recipeId), or(isNull(recipes.ownerUserId), eq(recipes.ownerUserId, userId))))
+    .returning();
+  if (!updated) return null;
+  return assembleStoredRecipe(updated, await getFavoriteFlag(userId, recipeId));
+}
+
+export async function setRecipePhoto(
+  recipeId: string,
+  userId: string,
+  imageUrl: string | null,
+): Promise<StoredRecipe | null> {
+  const [updated] = await db
+    .update(recipes)
+    .set({ imageUrl, updatedAt: new Date() })
     .where(and(eq(recipes.id, recipeId), or(isNull(recipes.ownerUserId), eq(recipes.ownerUserId, userId))))
     .returning();
   if (!updated) return null;

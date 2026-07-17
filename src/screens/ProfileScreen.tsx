@@ -1,15 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import * as LocalAuthentication from 'expo-local-authentication';
 import { PressableScale } from '../components/PressableScale';
 import { BottomSheet } from '../components/BottomSheet';
 import { ProfileSettingsRow } from '../components/ProfileSettingsRow';
-import { getCookbookViaBackend, getPreferencesViaBackend } from '../api/backend';
+import { getCookbookStatsViaBackend, getPreferencesViaBackend } from '../api/backend';
 import { useAppContext } from '../navigation/AppContext';
 import { useAuthCapability } from '../navigation/AuthCapabilityContext';
-import { getFaceIdLockEnabled, setFaceIdLockEnabled } from '../storage/security';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
 import { typography } from '../theme/typography';
@@ -20,41 +18,21 @@ import type { RootStackParamList } from '../types/navigation';
 export function ProfileScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { userProfile } = useAppContext();
-  const { signOut, clerkEnabled } = useAuthCapability();
+  const { signOut } = useAuthCapability();
   const [recipeCount, setRecipeCount] = useState(0);
   const [favoriteCount, setFavoriteCount] = useState(0);
   const [plan, setPlan] = useState('free');
   const [signOutOpen, setSignOutOpen] = useState(false);
-  const [faceIdLock, setFaceIdLock] = useState(false);
 
   useEffect(() => {
-    void getCookbookViaBackend().then((recipes) => {
-      setRecipeCount(recipes.length);
-      setFavoriteCount(recipes.filter((r) => r.is_favorite).length);
+    void getCookbookStatsViaBackend().then(({ total, favorites }) => {
+      setRecipeCount(total);
+      setFavoriteCount(favorites);
     });
     void getPreferencesViaBackend().then(({ plan: currentPlan }) => {
       setPlan(currentPlan);
     });
-    void getFaceIdLockEnabled().then(setFaceIdLock);
   }, []);
-
-  const handleToggleFaceIdLock = async (next: boolean) => {
-    if (next) {
-      const [hasHardware, isEnrolled] = await Promise.all([
-        LocalAuthentication.hasHardwareAsync(),
-        LocalAuthentication.isEnrolledAsync(),
-      ]);
-      if (!hasHardware || !isEnrolled) {
-        Alert.alert(
-          'Face ID not set up',
-          'Set up Face ID or Touch ID in your device settings first, then turn this on.',
-        );
-        return;
-      }
-    }
-    setFaceIdLock(next);
-    void setFaceIdLockEnabled(next);
-  };
 
   const initial = userProfile.name.trim().charAt(0).toUpperCase() || '?';
 
@@ -104,25 +82,6 @@ export function ProfileScreen() {
         <View style={styles.groupedList}>
           <ProfileSettingsRow label="Notifications" onPress={() => navigation.navigate('ProfileNotifications')} isLast />
         </View>
-
-        {clerkEnabled ? (
-          <>
-            <Text style={styles.sectionLabel}>Security</Text>
-            <View style={styles.groupedList}>
-              <View style={[styles.toggleRow, styles.toggleRowLast]}>
-                <View style={styles.toggleRowText}>
-                  <Text style={styles.toggleLabel}>Face ID Lock</Text>
-                  <Text style={styles.toggleDescription}>Require Face ID to reopen Meno on this device.</Text>
-                </View>
-                <Switch
-                  value={faceIdLock}
-                  onValueChange={handleToggleFaceIdLock}
-                  trackColor={{ true: colors.accent2, false: colors.hairline }}
-                />
-              </View>
-            </View>
-          </>
-        ) : null}
 
         <Text style={styles.sectionLabel}>Support</Text>
         <View style={styles.groupedList}>
@@ -294,31 +253,6 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     paddingHorizontal: 14,
     ...elevation.card,
-  },
-  toggleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.hairlineAlt,
-    gap: 12,
-  },
-  toggleRowLast: {
-    borderBottomWidth: 0,
-  },
-  toggleRowText: {
-    flex: 1,
-  },
-  toggleLabel: {
-    color: colors.foreground,
-    fontSize: 14,
-    fontFamily: fontFamily.bold,
-  },
-  toggleDescription: {
-    color: colors.subtext,
-    fontSize: 12,
-    marginTop: 2,
   },
   signOutRow: {
     marginTop: 24,

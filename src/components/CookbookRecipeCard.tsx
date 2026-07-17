@@ -5,10 +5,10 @@ import { PressableScale } from './PressableScale';
 import { TagPill } from './TagPill';
 import { colors } from '../theme/colors';
 import { fontFamily } from '../theme/fonts';
-import type { StoredRecipe } from '../types';
+import type { CookbookListItem } from '../types';
 
 interface CookbookRecipeCardProps {
-  recipe: StoredRecipe;
+  recipe: CookbookListItem;
   onPress: () => void;
   onToggleFavorite: () => void;
 }
@@ -17,7 +17,7 @@ export function CookbookRecipeCard({ recipe, onPress, onToggleFavorite }: Cookbo
   return (
     <PressableScale onPress={onPress} style={styles.card} scaleTo={0.97}>
       <View>
-        <MattedPhoto uri={null} aspectRatio={1} borderRadius={16} />
+        <MattedPhoto uri={recipe.image_url} aspectRatio={1} borderRadius={16} />
         {/* PressableScale forwards `style` to its inner Animated.View, not
             the outer Pressable that actually participates in layout --
             position:absolute has to live on a plain wrapping View, or the
@@ -36,9 +36,9 @@ export function CookbookRecipeCard({ recipe, onPress, onToggleFavorite }: Cookbo
       <Text style={styles.meta}>
         {recipe.total_time_minutes} min · {recipe.cuisine}
       </Text>
-      {recipe.versions.length > 1 ? (
+      {recipe.version_count > 1 ? (
         <View style={styles.tagRow}>
-          <TagPill label={`v${recipe.current_version.version_number}`} variant="version" />
+          <TagPill label={`v${recipe.current_version_number}`} variant="version" />
         </View>
       ) : null}
     </PressableScale>

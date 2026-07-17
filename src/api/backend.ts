@@ -1,4 +1,5 @@
 import type {
+  CookbookListItem,
   GenerationRequest,
   Ingredient,
   Recipe,
@@ -91,7 +92,13 @@ async function backendFetch<T>(
   ensureConfigured();
   const isFormData = init.body instanceof FormData;
   const headers: Record<string, string> = await getAuthHeaders();
-  if (!isFormData) {
+  // Only set this when there's an actual body to send -- Fastify's default
+  // JSON body parser throws a 400 (FST_ERR_CTP_EMPTY_JSON_BODY) when it sees
+  // `Content-Type: application/json` on a request with no body, which is
+  // exactly what a body-less DELETE (or any other verb with no payload)
+  // sends. Every mutation before delete-version/delete-recipe always carried
+  // a real JSON body, so this never surfaced until now.
+  if (!isFormData && init.body !== undefined) {
     headers['Content-Type'] = 'application/json';
   }
   if (init.idempotencyKey) {
@@ -165,9 +172,41 @@ export async function askAgentViaBackend(question: string, recipes: Recipe[]): P
   return data.answer;
 }
 
-export async function getCookbookViaBackend(): Promise<StoredRecipe[]> {
-  const data = await backendFetch<{ recipes: StoredRecipe[] }>('/v1/cookbook');
-  return data.recipes;
+export interface CookbookPage {
+  recipes: CookbookListItem[];
+  hasMore: boolean;
+}
+
+export interface CookbookQueryParams {
+  limit?: number;
+  offset?: number;
+  search?: string;
+  filter?: string;
+  sort?: 'recent' | 'title_asc' | 'time_asc' | 'time_desc';
+}
+
+export async function getCookbookViaBackend(params: CookbookQueryParams = {}): Promise<CookbookPage> {
+  // Built by hand rather than via URLSearchParams -- that's not guaranteed
+  // to be polyfilled in the Hermes/RN runtime this app runs on, and nothing
+  // else in this file relies on it either.
+  const parts = [`limit=${params.limit ?? 24}`, `offset=${params.offset ?? 0}`];
+  if (params.search) parts.push(`search=${encodeURIComponent(params.search)}`);
+  if (params.filter) parts.push(`filter=${encodeURIComponent(params.filter)}`);
+  if (params.sort) parts.push(`sort=${encodeURIComponent(params.sort)}`);
+
+  const data = await backendFetch<{ recipes: CookbookListItem[]; has_more: boolean }>(
+    `/v1/cookbook?${parts.join('&')}`,
+  );
+  return { recipes: data.recipes, hasMore: data.has_more };
+}
+
+export async function getCookbookStatsViaBackend(): Promise<{ total: number; favorites: number }> {
+  return backendFetch('/v1/cookbook/stats');
+}
+
+export async function getCookbookCuisinesViaBackend(): Promise<string[]> {
+  const data = await backendFetch<{ cuisines: string[] }>('/v1/cookbook/cuisines');
+  return data.cuisines;
 }
 
 export async function getRecipeViaBackend(recipeId: string): Promise<StoredRecipe> {
@@ -265,6 +304,18 @@ export async function addRecipeVersionViaBackend(
   return data.recipe;
 }
 
+export async function updateRecipeVersionViaBackend(
+  recipeId: string,
+  versionId: string,
+  payload: { ingredients: Ingredient[]; steps: RecipeStep[]; change_note?: string | null },
+): Promise<StoredRecipe> {
+  const data = await backendFetch<{ recipe: StoredRecipe }>(`/v1/recipes/${recipeId}/versions/${versionId}`, {
+    method: 'PATCH',
+    body: payload,
+  });
+  return data.recipe;
+}
+
 export async function setCurrentVersionViaBackend(recipeId: string, versionId: string): Promise<StoredRecipe> {
   const data = await backendFetch<{ recipe: StoredRecipe }>(`/v1/recipes/${recipeId}/current-version`, {
     method: 'PATCH',
@@ -288,6 +339,14 @@ export async function setVideoLinkViaBackend(recipeId: string, videoUrl: string 
   const data = await backendFetch<{ recipe: StoredRecipe }>(`/v1/recipes/${recipeId}/video-link`, {
     method: 'PUT',
     body: { video_url: videoUrl },
+  });
+  return data.recipe;
+}
+
+export async function setRecipePhotoViaBackend(recipeId: string, imageUrl: string | null): Promise<StoredRecipe> {
+  const data = await backendFetch<{ recipe: StoredRecipe }>(`/v1/recipes/${recipeId}/photo`, {
+    method: 'PUT',
+    body: { image_url: imageUrl },
   });
   return data.recipe;
 }
