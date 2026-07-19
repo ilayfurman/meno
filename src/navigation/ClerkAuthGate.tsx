@@ -1,6 +1,6 @@
 import React from 'react';
 import { ActivityIndicator, View } from 'react-native';
-import { useAuth, useClerk } from '@clerk/expo';
+import { useAuth, useClerk, useUser } from '@clerk/expo';
 import { AuthScreen } from '../screens/AuthScreen';
 import { AuthCapabilityProvider } from './AuthCapabilityContext';
 
@@ -19,6 +19,7 @@ import { AuthCapabilityProvider } from './AuthCapabilityContext';
 export function ClerkAuthGate({ children }: { children: React.ReactNode }) {
   const { isLoaded, isSignedIn } = useAuth();
   const clerk = useClerk();
+  const { user } = useUser();
 
   if (!isLoaded) {
     return (
@@ -32,8 +33,31 @@ export function ClerkAuthGate({ children }: { children: React.ReactNode }) {
     return <AuthScreen />;
   }
 
+  const email = user?.primaryEmailAddress?.emailAddress ?? '';
+  // fullName is Clerk's own firstName+lastName join; falls back to the email
+  // handle (part before @) for accounts created before the name field
+  // existed, or that skipped it.
+  const name = user?.fullName?.trim() || email.split('@')[0] || 'Meno User';
+  const photoUrl = user?.hasImage ? user.imageUrl : null;
+
+  // We store the whole name in firstName (see AuthScreen's sign-up form --
+  // there's no separate last-name field), so an edit just overwrites it.
+  const updateName = async (nextName: string) => {
+    if (!user) return;
+    await user.update({ firstName: nextName.trim() });
+  };
+
+  // Clerk accepts a base64 data: URL directly as the file, same format the
+  // recipe photo picker already produces -- no separate upload step needed.
+  const updatePhoto = async (dataUrl: string) => {
+    if (!user) return;
+    await user.setProfileImage({ file: dataUrl });
+  };
+
   return (
-    <AuthCapabilityProvider value={{ clerkEnabled: true, signOut: () => clerk.signOut() }}>
+    <AuthCapabilityProvider
+      value={{ clerkEnabled: true, signOut: () => clerk.signOut(), name, email, photoUrl, updateName, updatePhoto }}
+    >
       {children}
     </AuthCapabilityProvider>
   );

@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import * as ImagePicker from 'expo-image-picker';
 import { PressableScale } from '../components/PressableScale';
 import { BottomSheet } from '../components/BottomSheet';
 import { ProfileSettingsRow } from '../components/ProfileSettingsRow';
 import { getCookbookStatsViaBackend, getPreferencesViaBackend } from '../api/backend';
-import { useAppContext } from '../navigation/AppContext';
 import { useAuthCapability } from '../navigation/AuthCapabilityContext';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
@@ -17,12 +17,15 @@ import type { RootStackParamList } from '../types/navigation';
 
 export function ProfileScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { userProfile } = useAppContext();
-  const { signOut } = useAuthCapability();
+  const { name, email, photoUrl, signOut, updateName, updatePhoto } = useAuthCapability();
   const [recipeCount, setRecipeCount] = useState(0);
   const [favoriteCount, setFavoriteCount] = useState(0);
   const [plan, setPlan] = useState('free');
   const [signOutOpen, setSignOutOpen] = useState(false);
+  const [editProfileOpen, setEditProfileOpen] = useState(false);
+  const [nameDraft, setNameDraft] = useState(name);
+  const [isSavingName, setIsSavingName] = useState(false);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
 
   useEffect(() => {
     void getCookbookStatsViaBackend().then(({ total, favorites }) => {
@@ -34,7 +37,62 @@ export function ProfileScreen() {
     });
   }, []);
 
-  const initial = userProfile.name.trim().charAt(0).toUpperCase() || '?';
+  const initial = name.trim().charAt(0).toUpperCase() || '?';
+
+  const openEditProfile = () => {
+    setNameDraft(name);
+    setEditProfileOpen(true);
+  };
+
+  const handleSaveName = async () => {
+    const trimmed = nameDraft.trim();
+    if (!trimmed) {
+      Alert.alert('Name required', 'Please enter a name.');
+      return;
+    }
+    setIsSavingName(true);
+    try {
+      await updateName(trimmed);
+      setEditProfileOpen(false);
+    } catch (err) {
+      console.error('Failed to update name:', err);
+      Alert.alert('Something went wrong', "That name couldn't be saved. Please try again.");
+    } finally {
+      setIsSavingName(false);
+    }
+  };
+
+  const handleChangePhoto = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Photo access needed', 'Enable photo library access in Settings to add a picture.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.5,
+      base64: true,
+    });
+
+    if (result.canceled) return;
+    const asset = result.assets[0];
+    if (!asset?.base64) return;
+
+    const dataUrl = `data:${asset.mimeType ?? 'image/jpeg'};base64,${asset.base64}`;
+
+    setIsUploadingPhoto(true);
+    try {
+      await updatePhoto(dataUrl);
+    } catch (err) {
+      console.error('Failed to update profile photo:', err);
+      Alert.alert('Something went wrong', "That photo couldn't be saved. Please try again.");
+    } finally {
+      setIsUploadingPhoto(false);
+    }
+  };
 
   return (
     <View style={styles.screen}>
@@ -42,12 +100,29 @@ export function ProfileScreen() {
         <Text style={styles.title}>Your account</Text>
 
         <View style={styles.identityRow}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{initial}</Text>
+          <View style={styles.avatarWrap}>
+            <PressableScale onPress={handleChangePhoto} style={styles.avatar} disabled={isUploadingPhoto}>
+              {photoUrl ? (
+                <Image source={{ uri: photoUrl }} style={styles.avatarImage} />
+              ) : (
+                <Text style={styles.avatarText}>{initial}</Text>
+              )}
+              {isUploadingPhoto ? (
+                <View style={styles.avatarLoadingOverlay}>
+                  <ActivityIndicator color="#fff" size="small" />
+                </View>
+              ) : null}
+            </PressableScale>
+            <View style={styles.avatarEditBadge}>
+              <Text style={styles.avatarEditBadgeText}>✎</Text>
+            </View>
           </View>
-          <View>
-            <Text style={styles.name}>{userProfile.name}</Text>
-            <Text style={styles.email}>{userProfile.email}</Text>
+          <View style={styles.identityTextWrap}>
+            <PressableScale onPress={openEditProfile} style={styles.nameRow}>
+              <Text style={styles.name}>{name}</Text>
+              <Text style={styles.editLink}>Edit</Text>
+            </PressableScale>
+            <Text style={styles.email}>{email}</Text>
           </View>
         </View>
 
@@ -135,6 +210,48 @@ export function ProfileScreen() {
           </View>
         </View>
       </BottomSheet>
+
+      <BottomSheet visible={editProfileOpen} onDismiss={() => setEditProfileOpen(false)}>
+        <Text style={styles.editProfileTitle}>Edit profile</Text>
+        <PressableScale onPress={handleChangePhoto} style={styles.editProfileAvatarWrap} disabled={isUploadingPhoto}>
+          <View style={styles.avatar}>
+            {photoUrl ? (
+              <Image source={{ uri: photoUrl }} style={styles.avatarImage} />
+            ) : (
+              <Text style={styles.avatarText}>{initial}</Text>
+            )}
+            {isUploadingPhoto ? (
+              <View style={styles.avatarLoadingOverlay}>
+                <ActivityIndicator color="#fff" size="small" />
+              </View>
+            ) : null}
+          </View>
+          <Text style={styles.editProfilePhotoLink}>Change photo</Text>
+        </PressableScale>
+
+        <Text style={styles.editProfileLabel}>Name</Text>
+        <TextInput
+          value={nameDraft}
+          onChangeText={setNameDraft}
+          placeholder="Name"
+          placeholderTextColor={colors.subtext}
+          autoCapitalize="words"
+          style={styles.editProfileInput}
+        />
+
+        <View style={styles.editProfileButtonWrap}>
+          <PressableScale
+            onPress={handleSaveName}
+            style={[styles.editProfileSave, (isSavingName || !nameDraft.trim()) && styles.editProfileSaveDisabled]}
+          >
+            {isSavingName ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <Text style={styles.editProfileSaveText}>Save</Text>
+            )}
+          </PressableScale>
+        </View>
+      </BottomSheet>
     </View>
   );
 }
@@ -163,6 +280,9 @@ const styles = StyleSheet.create({
     gap: 12,
     marginBottom: 16,
   },
+  avatarWrap: {
+    position: 'relative',
+  },
   avatar: {
     width: 48,
     height: 48,
@@ -170,15 +290,60 @@ const styles = StyleSheet.create({
     backgroundColor: colors.foreground,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+  },
+  avatarLoadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Small pencil badge pinned to the avatar's corner, purely a visual
+  // affordance that the avatar is tappable -- the actual tap target is the
+  // whole avatar (PressableScale), not this badge itself.
+  avatarEditBadge: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: colors.accent,
+    borderWidth: 2,
+    borderColor: colors.canvas,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarEditBadgeText: {
+    color: '#fff',
+    fontSize: 10,
   },
   avatarText: {
     color: '#fff',
     fontSize: 18,
     fontFamily: fontFamily.extraBold,
   },
+  identityTextWrap: {
+    flex: 1,
+  },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    alignSelf: 'flex-start',
+  },
   name: {
     color: colors.foreground,
     fontSize: 16,
+    fontFamily: fontFamily.bold,
+  },
+  editLink: {
+    color: colors.accent,
+    fontSize: 12.5,
     fontFamily: fontFamily.bold,
   },
   email: {
@@ -321,5 +486,57 @@ const styles = StyleSheet.create({
   signOutConfirmText: {
     color: '#fff',
     fontFamily: fontFamily.bold,
+  },
+  editProfileTitle: {
+    color: colors.foreground,
+    fontSize: 18,
+    fontFamily: fontFamily.extraBold,
+    textAlign: 'center',
+    marginBottom: 18,
+  },
+  editProfileAvatarWrap: {
+    alignSelf: 'center',
+    alignItems: 'center',
+    marginBottom: 22,
+  },
+  editProfilePhotoLink: {
+    color: colors.accent,
+    fontFamily: fontFamily.bold,
+    fontSize: 13,
+    marginTop: 8,
+  },
+  editProfileLabel: {
+    color: colors.subtext,
+    fontSize: 11,
+    fontFamily: fontFamily.bold,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    marginBottom: 6,
+  },
+  editProfileInput: {
+    backgroundColor: colors.canvas,
+    borderRadius: spacing.radiusCard,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    fontSize: 14.5,
+    color: colors.foreground,
+  },
+  editProfileButtonWrap: {
+    marginTop: 22,
+  },
+  editProfileSave: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accent,
+    borderRadius: spacing.radiusPill,
+    paddingVertical: 15,
+  },
+  editProfileSaveDisabled: {
+    opacity: 0.5,
+  },
+  editProfileSaveText: {
+    color: '#fff',
+    fontFamily: fontFamily.bold,
+    fontSize: 15,
   },
 });

@@ -363,7 +363,19 @@ export default function App() {
   if (!CLERK_PUBLISHABLE_KEY) {
     return (
       <SafeAreaProvider>
-        <AuthCapabilityProvider value={{ clerkEnabled: false, signOut: null }}>{appContent}</AuthCapabilityProvider>
+        <AuthCapabilityProvider
+          value={{
+            clerkEnabled: false,
+            signOut: null,
+            name: userProfile.name,
+            email: userProfile.email,
+            photoUrl: userProfile.photoUri ?? null,
+            updateName: async (nextName) => setUserProfile({ ...userProfile, name: nextName.trim() }),
+            updatePhoto: async (dataUrl) => setUserProfile({ ...userProfile, photoUri: dataUrl }),
+          }}
+        >
+          {appContent}
+        </AuthCapabilityProvider>
       </SafeAreaProvider>
     );
   }
