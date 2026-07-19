@@ -145,8 +145,6 @@ export function CookbookScreen() {
     }
   }, [offset, hasMore, isLoadingMore, isInitialLoading, debouncedSearch, activeFilter, sortBy]);
 
-  const showQuickGenerateCard = activeFilter === 'all' && searchQuery.trim() === '';
-
   const handleToggleFavorite = async (recipe: CookbookListItem) => {
     const next = !recipe.is_favorite;
     if (activeFilter === 'favorites' && !next) {
@@ -215,16 +213,6 @@ export function CookbookScreen() {
                 </PressableScale>
               ))}
             </View>
-
-            {showQuickGenerateCard ? (
-              <PressableScale onPress={() => navigation.navigate('QuickGenerate')} style={styles.quickGenerateCard}>
-                <Text style={styles.quickGenerateIcon}>✦</Text>
-                <View style={styles.quickGenerateTextWrap}>
-                  <Text style={styles.quickGenerateTitle}>No AI connected?</Text>
-                  <Text style={styles.quickGenerateSubtitle}>Get 3 quick ideas from Meno, right now</Text>
-                </View>
-              </PressableScale>
-            ) : null}
 
             <View style={styles.sortRow}>
               <Text style={styles.sortRowLabel}>Sort by</Text>
@@ -406,33 +394,6 @@ const styles = StyleSheet.create({
   sortControlChevron: {
     color: colors.subtext,
     fontSize: 11,
-  },
-  quickGenerateCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: '#fff',
-    borderRadius: spacing.radiusCard,
-    padding: 16,
-    marginBottom: 16,
-    ...elevation.card,
-  },
-  quickGenerateIcon: {
-    fontSize: 22,
-    color: colors.accent,
-  },
-  quickGenerateTextWrap: {
-    flex: 1,
-  },
-  quickGenerateTitle: {
-    color: colors.foreground,
-    fontSize: 14.5,
-    fontFamily: fontFamily.bold,
-  },
-  quickGenerateSubtitle: {
-    color: colors.subtext,
-    fontSize: 12.5,
-    marginTop: 2,
   },
   emptyText: {
     color: colors.subtext,

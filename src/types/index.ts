@@ -39,6 +39,10 @@ export interface UserPreferences {
 export interface UserProfile {
   name: string;
   email: string;
+  // Local-only avatar under dev-auth (no Clerk configured) -- a data: URL,
+  // same format the recipe photo picker stores. Under Clerk, the avatar
+  // lives on the Clerk user instead (see AuthCapabilityContext).
+  photoUri?: string;
 }
 
 export type PlanTier = 'free' | 'plus' | 'pro';

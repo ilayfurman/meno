@@ -94,6 +94,8 @@ type SignInFlow = ReturnType<typeof useSignIn>;
 // activate" email round-trip.
 function SignUpCard({ flow }: { flow: SignUpFlow }) {
   const { signUp, errors, fetchStatus } = flow;
+  const [fullName, setFullName] = useState('');
+  const [nameFocused, setNameFocused] = useState(false);
   const [emailAddress, setEmailAddress] = useState('');
   const [emailFocused, setEmailFocused] = useState(false);
   const [code, setCode] = useState('');
@@ -103,7 +105,11 @@ function SignUpCard({ flow }: { flow: SignUpFlow }) {
 
   const handleSubmit = async () => {
     setGeneralError(null);
-    const { error } = await signUp.create({ emailAddress });
+    const trimmedName = fullName.trim();
+    const { error } = await signUp.create({
+      emailAddress,
+      ...(trimmedName ? { firstName: trimmedName } : {}),
+    });
     if (error) {
       setGeneralError(error.message ?? 'Something went wrong. Please try again.');
       return;
@@ -176,6 +182,16 @@ function SignUpCard({ flow }: { flow: SignUpFlow }) {
       <Text style={styles.pageTitle}>Create account</Text>
       <Text style={styles.pageSubtitle}>Save recipes and sync your cookbook across devices.</Text>
 
+      <TextInput
+        value={fullName}
+        onChangeText={setFullName}
+        onFocus={() => setNameFocused(true)}
+        onBlur={() => setNameFocused(false)}
+        placeholder="Name"
+        placeholderTextColor={colors.subtext}
+        autoCapitalize="words"
+        style={[styles.input, styles.inputSpaced, nameFocused && styles.inputFocused]}
+      />
       <TextInput
         value={emailAddress}
         onChangeText={setEmailAddress}
@@ -488,6 +504,9 @@ const styles = StyleSheet.create({
   inputFocused: {
     borderColor: colors.accent,
     backgroundColor: '#fff',
+  },
+  inputSpaced: {
+    marginBottom: 10,
   },
   errorText: {
     color: colors.danger,
