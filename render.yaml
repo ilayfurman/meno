@@ -20,7 +20,14 @@ services:
     runtime: node
     plan: free
     rootDir: backend
-    buildCommand: npm install && npm run build
+    # --include=dev is required here even though NODE_ENV below is
+    # "production" -- npm treats NODE_ENV=production as an implicit signal
+    # to skip devDependencies during install, which would silently drop
+    # typescript/@types/node/tsx/drizzle-kit (the build tooling itself) and
+    # break the `npm run build` step that follows on the same line. This
+    # only affects install; the running server still boots with
+    # NODE_ENV=production as normal.
+    buildCommand: npm install --include=dev && npm run build
     startCommand: npm start
     envVars:
       - key: NODE_ENV
