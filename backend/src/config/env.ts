@@ -26,6 +26,12 @@ const envSchema = z.object({
   // service relies on, so don't swap the default model without checking that.
   GROQ_API_KEY: z.string().min(1),
   GROQ_MODEL: z.string().default('openai/gpt-oss-120b'),
+  // Separate model for image-based extraction (screenshot import) --
+  // GROQ_MODEL above has no vision support. qwen/qwen3.6-27b is Groq's
+  // current vision-capable model (as of mid-2026); it's a preview model, not
+  // one of the strict-json_schema-guaranteed ones, so that call uses plain
+  // JSON mode + zod validation instead of strict json_schema.
+  GROQ_VISION_MODEL: z.string().default('qwen/qwen3.6-27b'),
   CLERK_SECRET_KEY: z.string().optional(),
   ALLOW_DEV_AUTH: z.coerce.boolean().default(true),
   DEV_FALLBACK_CLERK_USER_ID: z.string().default('dev-local-user'),

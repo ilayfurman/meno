@@ -22,7 +22,7 @@ import {
   setCurrentVersionViaBackend,
   setFavoriteViaBackend,
   setRecipePhotoViaBackend,
-  setVideoLinkViaBackend,
+  setRecipeLinksViaBackend,
 } from '../api/backend';
 import { buildRecipeHtml } from '../utils/recipeExport';
 import { colors } from '../theme/colors';
@@ -44,8 +44,11 @@ export function RecipeDetailScreen() {
   const [activeVersionIndex, setActiveVersionIndex] = useState(0);
   const [isSharingPdf, setIsSharingPdf] = useState(false);
   const [continueSheetOpen, setContinueSheetOpen] = useState(false);
-  const [videoEditOpen, setVideoEditOpen] = useState(false);
-  const [videoInput, setVideoInput] = useState('');
+  const [linksEditOpen, setLinksEditOpen] = useState(false);
+  const [linkInput, setLinkInput] = useState('');
+  // null means "adding a new link"; otherwise the index into recipe.links
+  // being edited.
+  const [linkEditIndex, setLinkEditIndex] = useState<number | null>(null);
   const [photoUploading, setPhotoUploading] = useState(false);
   const [deleteRecipeSheetOpen, setDeleteRecipeSheetOpen] = useState(false);
   const [isDeletingRecipe, setIsDeletingRecipe] = useState(false);
@@ -169,21 +172,40 @@ export function RecipeDetailScreen() {
     }
   };
 
-  const handleOpenVideoEdit = () => {
-    setVideoInput(recipe.video_url ?? '');
-    setVideoEditOpen(true);
+  const handleOpenAddLink = () => {
+    setLinkEditIndex(null);
+    setLinkInput('');
+    setLinksEditOpen(true);
   };
 
-  const handleSaveVideo = async () => {
-    const updated = await setVideoLinkViaBackend(recipe.id, videoInput.trim() || null);
-    setRecipe(updated);
-    setVideoEditOpen(false);
+  const handleOpenEditLink = (index: number) => {
+    setLinkEditIndex(index);
+    setLinkInput(recipe.links[index]?.url ?? '');
+    setLinksEditOpen(true);
   };
 
-  const handleRemoveVideo = async () => {
-    const updated = await setVideoLinkViaBackend(recipe.id, null);
+  // Full-replacement update -- always sends the whole desired links array,
+  // not a single add/edit/remove delta (matches the backend endpoint).
+  const handleSaveLink = async () => {
+    const url = linkInput.trim();
+    if (!url) return;
+    const nextLinks = recipe.links.map((link) => ({ url: link.url }));
+    if (linkEditIndex !== null) {
+      nextLinks[linkEditIndex] = { url };
+    } else {
+      nextLinks.push({ url });
+    }
+    const updated = await setRecipeLinksViaBackend(recipe.id, nextLinks);
     setRecipe(updated);
-    setVideoEditOpen(false);
+    setLinksEditOpen(false);
+  };
+
+  const handleRemoveLink = async () => {
+    if (linkEditIndex === null) return;
+    const nextLinks = recipe.links.filter((_, index) => index !== linkEditIndex).map((link) => ({ url: link.url }));
+    const updated = await setRecipeLinksViaBackend(recipe.id, nextLinks);
+    setRecipe(updated);
+    setLinksEditOpen(false);
   };
 
   const handleEditPhoto = async () => {
@@ -242,20 +264,25 @@ export function RecipeDetailScreen() {
           <TagPill label={`serves ${recipe.servings}`} />
         </View>
 
-        {recipe.video_url && recipe.video_platform ? (
-          <VideoAttachmentCard videoUrl={recipe.video_url} videoPlatform={recipe.video_platform} onEdit={handleOpenVideoEdit} />
-        ) : (
-          <PressableScale onPress={handleOpenVideoEdit} style={styles.addVideoRow}>
-            <View style={styles.addVideoIconBadge}>
-              <Text style={styles.addVideoIconText}>▶</Text>
-            </View>
-            <View style={styles.addVideoTextWrap}>
-              <Text style={styles.addVideoTitle}>Add a video link</Text>
-              <Text style={styles.addVideoSubtitle}>Attach the TikTok, Reel, or YouTube video you got this from</Text>
-            </View>
-            <Text style={styles.addVideoChevron}>›</Text>
-          </PressableScale>
-        )}
+        {recipe.links.map((link, index) => (
+          <VideoAttachmentCard
+            key={`${link.url}-${index}`}
+            videoUrl={link.url}
+            videoPlatform={link.platform}
+            onEdit={() => handleOpenEditLink(index)}
+          />
+        ))}
+
+        <PressableScale onPress={handleOpenAddLink} style={styles.addVideoRow}>
+          <View style={styles.addVideoIconBadge}>
+            <Text style={styles.addVideoIconText}>▶</Text>
+          </View>
+          <View style={styles.addVideoTextWrap}>
+            <Text style={styles.addVideoTitle}>{recipe.links.length > 0 ? 'Add another link' : 'Add a link'}</Text>
+            <Text style={styles.addVideoSubtitle}>Attach the TikTok, Reel, YouTube video, or website you got this from</Text>
+          </View>
+          <Text style={styles.addVideoChevron}>›</Text>
+        </PressableScale>
 
         {recipe.versions.length > 1 ? (
           <View>
@@ -346,15 +373,17 @@ export function RecipeDetailScreen() {
 
       <ContinueIteratingSheet visible={continueSheetOpen} onDismiss={() => setContinueSheetOpen(false)} recipe={recipe} />
 
-      <BottomSheet visible={videoEditOpen} onDismiss={() => setVideoEditOpen(false)}>
+      <BottomSheet visible={linksEditOpen} onDismiss={() => setLinksEditOpen(false)}>
         <View style={styles.videoEditIconBadge}>
           <Text style={styles.videoEditIconText}>▶</Text>
         </View>
-        <Text style={styles.videoEditTitle}>{recipe.video_url ? 'Edit video link' : 'Add a video link'}</Text>
-        <Text style={styles.videoEditSubtitle}>Paste a TikTok, Instagram, or YouTube link — it'll show up right on the recipe.</Text>
+        <Text style={styles.videoEditTitle}>{linkEditIndex !== null ? 'Edit link' : 'Add a link'}</Text>
+        <Text style={styles.videoEditSubtitle}>
+          Paste a TikTok, Instagram, or YouTube link, or a website — it'll show up right on the recipe.
+        </Text>
         <TextInput
-          value={videoInput}
-          onChangeText={setVideoInput}
+          value={linkInput}
+          onChangeText={setLinkInput}
           placeholder="https://..."
           autoCapitalize="none"
           autoCorrect={false}
@@ -362,19 +391,19 @@ export function RecipeDetailScreen() {
         />
         <View style={styles.videoEditActions}>
           <View style={styles.videoEditButtonWrap}>
-            <PressableScale onPress={() => setVideoEditOpen(false)} style={styles.videoEditCancel}>
+            <PressableScale onPress={() => setLinksEditOpen(false)} style={styles.videoEditCancel}>
               <Text style={styles.videoEditCancelText}>Cancel</Text>
             </PressableScale>
           </View>
           <View style={styles.videoEditButtonWrap}>
-            <PressableScale onPress={handleSaveVideo} style={styles.primaryActionButton}>
+            <PressableScale onPress={handleSaveLink} style={styles.primaryActionButton}>
               <Text style={styles.primaryActionButtonText}>Save</Text>
             </PressableScale>
           </View>
         </View>
-        {recipe.video_url ? (
-          <PressableScale onPress={handleRemoveVideo} style={styles.videoEditRemove}>
-            <Text style={styles.videoEditRemoveText}>Remove video link</Text>
+        {linkEditIndex !== null ? (
+          <PressableScale onPress={handleRemoveLink} style={styles.videoEditRemove}>
+            <Text style={styles.videoEditRemoveText}>Remove link</Text>
           </PressableScale>
         ) : null}
       </BottomSheet>

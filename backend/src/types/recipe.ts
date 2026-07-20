@@ -51,6 +51,11 @@ export const recipeVersionSchema = z.object({
   created_at: z.string().nullable().optional(),
 });
 
+export const recipeLinkSchema = z.object({
+  url: z.string().url(),
+  platform: z.enum(['tiktok', 'instagram', 'youtube', 'other']),
+});
+
 export const storedRecipeSchema = z.object({
   id: z.string().uuid(),
   title: z.string(),
@@ -61,8 +66,7 @@ export const storedRecipeSchema = z.object({
   short_hook: z.string(),
   dietary_tags: z.array(z.string()),
   allergen_warnings: z.array(z.string()),
-  video_url: z.string().url().nullable(),
-  video_platform: z.enum(['tiktok', 'instagram', 'youtube', 'other']).nullable(),
+  links: z.array(recipeLinkSchema),
   // Plain string rather than z.string().url() -- this is usually a data:
   // URL (base64-encoded photo the user picked from their library), which
   // can be a few hundred KB of text and doesn't need URL-shape validation.
@@ -81,11 +85,11 @@ export const createRecipeSchema = z.object({
   short_hook: z.string().default(''),
   dietary_tags: z.array(z.string()).default([]),
   allergen_warnings: z.array(z.string()).default([]),
-  video_url: z.string().url().nullable().optional(),
+  links: z.array(z.object({ url: z.string().url() })).optional(),
   ingredients: z.array(ingredientSchema),
   steps: z.array(stepSchema),
   change_note: z.string().nullable().optional(),
-  source_type: z.enum(['generated', 'link', 'pdf', 'text']).default('generated'),
+  source_type: z.enum(['generated', 'link', 'pdf', 'text', 'image']).default('generated'),
   source_url: z.string().url().nullable().optional(),
 });
 
@@ -105,8 +109,11 @@ export const updateRecipeVersionSchema = z.object({
   change_note: z.string().nullable().optional(),
 });
 
-export const updateVideoLinkSchema = z.object({
-  video_url: z.string().url().nullable(),
+// Full-replacement update -- the caller sends the whole current list of
+// links (after adding/editing/removing one in the UI), not a single delta.
+// Keeps this to one endpoint instead of separate add/edit/remove routes.
+export const updateRecipeLinksSchema = z.object({
+  links: z.array(z.object({ url: z.string().url() })),
 });
 
 export const updateRecipePhotoSchema = z.object({
@@ -114,6 +121,15 @@ export const updateRecipePhotoSchema = z.object({
 });
 
 export const extractedRecipeSchema = z.object({
+  // The model's own honest signal that the source (page text or image) it
+  // was given actually contained real recipe content. False means the
+  // fields below are meaningless placeholders, not a usable recipe --
+  // callers must check this before saving anything. Added after the app
+  // fabricated a full pasta recipe from an Instagram link whose page
+  // couldn't actually be read (Instagram blocks scrapers), because the old
+  // prompt told the model to "make a reasonable estimate" for anything
+  // missing with no escape hatch for "nothing is here at all."
+  recipe_found: z.boolean(),
   title: z.string(),
   cuisine: z.string(),
   servings: z.number().int().min(1),
@@ -128,6 +144,13 @@ export const extractedRecipeSchema = z.object({
 
 export const importTextSchema = z.object({
   text: z.string().min(1),
+  force: z.boolean().default(false),
+});
+
+export const importImageSchema = z.object({
+  // A data: URL (base64), same format used everywhere else images are sent
+  // in this app (recipe photo, profile photo).
+  image: z.string().min(1),
   force: z.boolean().default(false),
 });
 

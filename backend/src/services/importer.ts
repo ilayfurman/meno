@@ -32,6 +32,56 @@ function normalizeText(value: unknown, fallback: string) {
   return fallback;
 }
 
+// Some recipe plugins embed raw HTML inside their JSON-LD string fields --
+// e.g. an ingredient name that links out to a product ("<a href=...>Bob's
+// Red Mill 1:1 Flour</a>") instead of plain text. Strip any tags so the app
+// shows clean text either way.
+function stripHtmlTags(value: string): string {
+  return value
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// recipeInstructions can be a plain string, an array of strings, an array of
+// HowToStep objects ({ text }), or -- common on plugins that group steps
+// into named sections -- an array of HowToSection objects, each holding its
+// own nested itemListElement array of HowToStep. The old parser only handled
+// the flat HowToStep case, so any page using sections silently produced one
+// blank step per section (mapping each section object to '' since it has no
+// top-level .text). This recurses into itemListElement so nested steps are
+// found either way, and strips any inline HTML along the way.
+function flattenInstructionNode(node: unknown): string[] {
+  if (typeof node === 'string') {
+    const text = stripHtmlTags(node);
+    return text ? [text] : [];
+  }
+  if (Array.isArray(node)) {
+    return node.flatMap(flattenInstructionNode);
+  }
+  if (node && typeof node === 'object') {
+    const record = node as Record<string, unknown>;
+    if (Array.isArray(record.itemListElement)) {
+      return flattenInstructionNode(record.itemListElement);
+    }
+    if (typeof record.text === 'string') {
+      const text = stripHtmlTags(record.text);
+      return text ? [text] : [];
+    }
+    if (typeof record.name === 'string') {
+      const text = stripHtmlTags(record.name);
+      return text ? [text] : [];
+    }
+  }
+  return [];
+}
+
 function parseJsonLd(html: string): unknown[] {
   const matches = html.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi) ?? [];
   const blocks: unknown[] = [];
@@ -158,21 +208,21 @@ export function extractRecipeFromJsonLd(page: FetchedPage): ImportResult | null 
   }
 
   const ingredientNames = Array.isArray(recipeNode.recipeIngredient)
-    ? recipeNode.recipeIngredient.map((item) => normalizeText(item, 'Ingredient')).filter(Boolean)
+    ? recipeNode.recipeIngredient
+        .map((item) => stripHtmlTags(normalizeText(item, 'Ingredient')))
+        .filter(Boolean)
     : [];
 
-  const instructionsRaw = recipeNode.recipeInstructions;
-  const instructionList: string[] = Array.isArray(instructionsRaw)
-    ? instructionsRaw.map((item) => {
-        if (typeof item === 'string') return item;
-        if (item && typeof item === 'object' && typeof (item as Record<string, unknown>).text === 'string') {
-          return (item as Record<string, unknown>).text as string;
-        }
-        return '';
-      })
-    : typeof instructionsRaw === 'string'
-      ? [instructionsRaw]
-      : [];
+  const instructionList: string[] = flattenInstructionNode(recipeNode.recipeInstructions);
+
+  // If the JSON-LD didn't actually yield usable ingredients/steps (e.g. an
+  // instruction format this parser still doesn't recognize), don't hand back
+  // a recipe with blank steps -- return null so the caller falls back to AI
+  // extraction from the page text instead, which is slower but robust to
+  // whatever markup shape the site actually used.
+  if (ingredientNames.length === 0 || instructionList.length === 0) {
+    return null;
+  }
 
   return {
     title: normalizeText(recipeNode.name, 'Imported Recipe'),

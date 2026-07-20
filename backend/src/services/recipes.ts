@@ -58,8 +58,7 @@ async function assembleStoredRecipe(
     short_hook: recipeRow.shortHook,
     dietary_tags: recipeRow.dietaryTags as string[],
     allergen_warnings: recipeRow.allergenWarnings as string[],
-    video_url: recipeRow.videoUrl,
-    video_platform: recipeRow.videoPlatform as StoredRecipe['video_platform'],
+    links: (recipeRow.links as StoredRecipe['links']) ?? [],
     image_url: recipeRow.imageUrl,
     is_favorite: isFavorite,
     current_version: current,
@@ -158,7 +157,7 @@ export interface CreateRecipeInput {
   short_hook: string;
   dietary_tags: string[];
   allergen_warnings: string[];
-  video_url?: string | null;
+  links?: { url: string }[];
   ingredients: unknown;
   steps: unknown;
   change_note?: string | null;
@@ -180,8 +179,7 @@ export async function createRecipeForUser(userId: string, input: CreateRecipeInp
         shortHook: input.short_hook,
         dietaryTags: input.dietary_tags,
         allergenWarnings: input.allergen_warnings,
-        videoUrl: input.video_url ?? null,
-        videoPlatform: detectVideoPlatform(input.video_url ?? null),
+        links: (input.links ?? []).map((link) => ({ url: link.url, platform: detectVideoPlatform(link.url) ?? 'other' })),
         sourceType: input.source_type ?? 'generated',
         sourceUrl: input.source_url ?? null,
       })
@@ -594,14 +592,20 @@ export async function setFavorite(userId: string, recipeId: string, isFavorite: 
     .where(and(eq(cookbookItems.userId, userId), eq(cookbookItems.recipeId, recipeId)));
 }
 
-export async function setVideoLink(
+// Full-replacement: `links` is the recipe's complete link list after
+// whatever add/edit/remove the UI just did, not a single delta -- simpler
+// than separate add/edit/remove endpoints, and the list is always small.
+export async function setRecipeLinks(
   recipeId: string,
   userId: string,
-  videoUrl: string | null,
+  links: { url: string }[],
 ): Promise<StoredRecipe | null> {
   const [updated] = await db
     .update(recipes)
-    .set({ videoUrl, videoPlatform: detectVideoPlatform(videoUrl), updatedAt: new Date() })
+    .set({
+      links: links.map((link) => ({ url: link.url, platform: detectVideoPlatform(link.url) ?? 'other' })),
+      updatedAt: new Date(),
+    })
     .where(and(eq(recipes.id, recipeId), or(isNull(recipes.ownerUserId), eq(recipes.ownerUserId, userId))))
     .returning();
   if (!updated) return null;

@@ -16,12 +16,13 @@ import {
   eventCreateSchema,
   generationRequestSchema,
   hydrationRequestSchema,
+  importImageSchema,
   importTextSchema,
   importUrlSchema,
   recipeSummaryListSchema,
+  updateRecipeLinksSchema,
   updateRecipePhotoSchema,
   updateRecipeVersionSchema,
-  updateVideoLinkSchema,
   type Recipe,
 } from './types/recipe.js';
 import {
@@ -29,6 +30,7 @@ import {
   generateRecipeSummariesWithAi,
   generateRecipesWithAi,
   hydrateRecipeFromSummaryWithAi,
+  structureRecipeFromImage,
   structureRecipeFromText,
 } from './services/openai.js';
 import {
@@ -47,8 +49,8 @@ import {
   saveRecipeToCookbook,
   setCurrentVersion,
   setFavorite,
+  setRecipeLinks,
   setRecipePhoto,
-  setVideoLink,
   updateRecipeVersion,
 } from './services/recipes.js';
 import { getPlan, getPreferences, updatePreferences } from './services/preferences.js';
@@ -450,13 +452,13 @@ export function createApp() {
     return reply.send({ ok: true });
   });
 
-  app.put('/v1/recipes/:id/video-link', async (request, reply) => {
+  app.put('/v1/recipes/:id/links', async (request, reply) => {
     const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
-    const body = updateVideoLinkSchema.safeParse(request.body);
+    const body = updateRecipeLinksSchema.safeParse(request.body);
     if (!params.success) return sendValidationError(reply, params.error.flatten());
     if (!body.success) return sendValidationError(reply, body.error.flatten());
 
-    const recipe = await setVideoLink(params.data.id, request.auth.userId, body.data.video_url);
+    const recipe = await setRecipeLinks(params.data.id, request.auth.userId, body.data.links);
     if (!recipe) return reply.notFound('Recipe not found');
     return reply.send({ recipe });
   });
@@ -625,25 +627,18 @@ export function createApp() {
     }
 
     const pageText = htmlToReadableText(page.html);
-    const extracted = await structureRecipeFromText(pageText);
-    const candidate = { ...extracted.recipe, source_type: 'link' as const, source_url: page.url };
-    if (!parsed.data.force) {
-      const duplicate = await findDuplicateBySourceUrl(request.auth.userId, page.url);
-      if (duplicate) {
-        await db.insert(aiUsage).values({
-          userId: request.auth.userId,
-          endpoint: '/v1/recipes/import-url',
-          model: env.GROQ_MODEL,
-          inputTokens: extracted.usage?.prompt_tokens ?? 0,
-          outputTokens: extracted.usage?.completion_tokens ?? 0,
-          costEstimateUsd: '0.000000',
-        });
-        return { duplicate, candidate };
-      }
+    // Cheap guard before ever paying for an AI call: a page that came back
+    // (almost) empty -- e.g. Instagram/TikTok serving a login wall or JS
+    // shell instead of real content to a scraper -- has nothing worth
+    // extracting. Catching it here avoids the round-trip entirely for the
+    // most common blocked-site case.
+    if (pageText.length < 60) {
+      return reply
+        .code(422)
+        .send({ error: "Couldn't find any recipe content on that page. Some sites (like Instagram or TikTok) block outside access entirely -- try pasting a screenshot instead." });
     }
-    const recipe = await createRecipeForUser(request.auth.userId, candidate);
-    await saveRecipeToCookbook(request.auth.userId, recipe.id);
 
+    const extracted = await structureRecipeFromText(pageText);
     await db.insert(aiUsage).values({
       userId: request.auth.userId,
       endpoint: '/v1/recipes/import-url',
@@ -652,6 +647,21 @@ export function createApp() {
       outputTokens: extracted.usage?.completion_tokens ?? 0,
       costEstimateUsd: '0.000000',
     });
+    if (!extracted.recipe.recipe_found) {
+      return reply
+        .code(422)
+        .send({ error: "Couldn't find a recipe on that page -- there wasn't enough real recipe content to extract." });
+    }
+
+    const candidate = { ...extracted.recipe, source_type: 'link' as const, source_url: page.url };
+    if (!parsed.data.force) {
+      const duplicate = await findDuplicateBySourceUrl(request.auth.userId, page.url);
+      if (duplicate) {
+        return { duplicate, candidate };
+      }
+    }
+    const recipe = await createRecipeForUser(request.auth.userId, candidate);
+    await saveRecipeToCookbook(request.auth.userId, recipe.id);
 
     return { recipe };
   });
@@ -663,8 +673,6 @@ export function createApp() {
     }
 
     const extracted = await structureRecipeFromText(parsed.data.text);
-    const candidate = { ...extracted.recipe, source_type: 'text' as const };
-
     await db.insert(aiUsage).values({
       userId: request.auth.userId,
       endpoint: '/v1/recipes/import-text',
@@ -673,6 +681,13 @@ export function createApp() {
       outputTokens: extracted.usage?.completion_tokens ?? 0,
       costEstimateUsd: '0.000000',
     });
+    if (!extracted.recipe.recipe_found) {
+      return reply
+        .code(422)
+        .send({ error: "Couldn't find a recipe in that text -- there wasn't enough real recipe content to extract." });
+    }
+
+    const candidate = { ...extracted.recipe, source_type: 'text' as const };
 
     if (!parsed.data.force) {
       const duplicate = await findDuplicateByTitle(request.auth.userId, candidate.title);
@@ -716,8 +731,6 @@ export function createApp() {
     const force = typeof forceField?.value === 'string' && forceField.value === 'true';
 
     const extracted = await structureRecipeFromText(text);
-    const candidate = { ...extracted.recipe, source_type: 'pdf' as const };
-
     await db.insert(aiUsage).values({
       userId: request.auth.userId,
       endpoint: '/v1/recipes/import-pdf',
@@ -726,8 +739,60 @@ export function createApp() {
       outputTokens: extracted.usage?.completion_tokens ?? 0,
       costEstimateUsd: '0.000000',
     });
+    if (!extracted.recipe.recipe_found) {
+      return reply
+        .code(422)
+        .send({ error: "Couldn't find a recipe in that PDF -- there wasn't enough real recipe content to extract." });
+    }
+
+    const candidate = { ...extracted.recipe, source_type: 'pdf' as const };
 
     if (!force) {
+      const duplicate = await findDuplicateByTitle(request.auth.userId, candidate.title);
+      if (duplicate) {
+        return { duplicate, candidate };
+      }
+    }
+
+    const recipe = await createRecipeForUser(request.auth.userId, candidate);
+    await saveRecipeToCookbook(request.auth.userId, recipe.id);
+
+    return { recipe };
+  });
+
+  app.post('/v1/recipes/import-image', async (request, reply) => {
+    const parsed = importImageSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return sendValidationError(reply, parsed.error.flatten());
+    }
+    if (!parsed.data.image.startsWith('data:image/')) {
+      return reply.code(400).send({ error: 'Expected a base64 image data URL.' });
+    }
+    // Groq's 20MB request limit for image inputs -- base64 runs ~33% larger
+    // than the source bytes, so this catches an oversized photo before
+    // spending an API call on a request that would just get rejected.
+    if (parsed.data.image.length > 20 * 1024 * 1024) {
+      return reply.code(400).send({ error: 'That image is too large. Try a smaller screenshot.' });
+    }
+
+    const extracted = await structureRecipeFromImage(parsed.data.image);
+    await db.insert(aiUsage).values({
+      userId: request.auth.userId,
+      endpoint: '/v1/recipes/import-image',
+      model: env.GROQ_VISION_MODEL,
+      inputTokens: extracted.usage?.prompt_tokens ?? 0,
+      outputTokens: extracted.usage?.completion_tokens ?? 0,
+      costEstimateUsd: '0.000000',
+    });
+    if (!extracted.recipe.recipe_found) {
+      return reply
+        .code(422)
+        .send({ error: "Couldn't find a recipe in that photo -- make sure the ingredients or steps are visible and readable." });
+    }
+
+    const candidate = { ...extracted.recipe, source_type: 'image' as const };
+
+    if (!parsed.data.force) {
       const duplicate = await findDuplicateByTitle(request.auth.userId, candidate.title);
       if (duplicate) {
         return { duplicate, candidate };

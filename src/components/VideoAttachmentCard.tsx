@@ -25,7 +25,9 @@ export function VideoAttachmentCard({ videoUrl, videoPlatform, onEdit }: VideoAt
       <View style={[styles.icon, { backgroundColor: style.iconBackground }]}>
         <Text style={{ color: style.iconColor, fontSize: 16 }}>▶</Text>
       </View>
-      <Text style={[styles.label, { color: style.textColor }]}>Watch on {style.label}</Text>
+      <Text style={[styles.label, { color: style.textColor }]}>
+        {videoPlatform === 'other' ? 'Open link' : `Watch on ${style.label}`}
+      </Text>
       <PressableScale onPress={onEdit} style={styles.editButton}>
         <Text style={styles.editIcon}>✎</Text>
       </PressableScale>
