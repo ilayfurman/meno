@@ -133,6 +133,11 @@ export interface RecipeVersion {
 
 export type VideoPlatform = 'tiktok' | 'instagram' | 'youtube' | 'other';
 
+export interface RecipeLink {
+  url: string;
+  platform: VideoPlatform;
+}
+
 export interface StoredRecipe {
   id: string;
   title: string;
@@ -143,8 +148,7 @@ export interface StoredRecipe {
   short_hook: string;
   dietary_tags: string[];
   allergen_warnings: string[];
-  video_url: string | null;
-  video_platform: VideoPlatform | null;
+  links: RecipeLink[];
   image_url: string | null;
   is_favorite: boolean;
   current_version: RecipeVersion;

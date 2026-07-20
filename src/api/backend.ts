@@ -125,7 +125,21 @@ async function backendFetch<T>(
 
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(`Backend request failed (${response.status}): ${text}`);
+    // Routes like the recipe-extraction ones send a clean, user-facing
+    // { error: "..." } body on purpose (e.g. "Couldn't find a recipe in
+    // that photo") -- surface just that message instead of the raw
+    // "Backend request failed (422): {...}" wrapper, which is what screens
+    // like ImportRecipeSheet display directly to the user via err.message.
+    let userMessage: string | null = null;
+    try {
+      const parsed = JSON.parse(text) as { error?: string };
+      if (typeof parsed.error === 'string' && parsed.error) {
+        userMessage = parsed.error;
+      }
+    } catch {
+      // Not JSON -- fall through to the generic message below.
+    }
+    throw new Error(userMessage ?? `Backend request failed (${response.status}): ${text}`);
   }
 
   return (await response.json()) as T;
@@ -234,11 +248,11 @@ export interface CreateRecipePayload {
   short_hook: string;
   dietary_tags: string[];
   allergen_warnings: string[];
-  video_url?: string | null;
+  links?: { url: string }[];
   ingredients: Ingredient[];
   steps: RecipeStep[];
   change_note?: string | null;
-  source_type: 'generated' | 'link' | 'pdf' | 'text';
+  source_type: 'generated' | 'link' | 'pdf' | 'text' | 'image';
   source_url?: string | null;
 }
 
@@ -282,6 +296,14 @@ export async function importRecipeFromTextViaBackend(text: string, force = false
   const data = await backendFetch<{ recipe?: StoredRecipe; duplicate?: DuplicateCandidate; candidate?: CreateRecipePayload }>(
     '/v1/recipes/import-text',
     { method: 'POST', body: { text, force } },
+  );
+  return toImportOutcome(data);
+}
+
+export async function importRecipeFromImageViaBackend(dataUrl: string, force = false): Promise<ImportOutcome> {
+  const data = await backendFetch<{ recipe?: StoredRecipe; duplicate?: DuplicateCandidate; candidate?: CreateRecipePayload }>(
+    '/v1/recipes/import-image',
+    { method: 'POST', body: { image: dataUrl, force } },
   );
   return toImportOutcome(data);
 }
@@ -346,10 +368,13 @@ export async function deleteRecipeViaBackend(recipeId: string): Promise<void> {
   await backendFetch(`/v1/recipes/${recipeId}`, { method: 'DELETE' });
 }
 
-export async function setVideoLinkViaBackend(recipeId: string, videoUrl: string | null): Promise<StoredRecipe> {
-  const data = await backendFetch<{ recipe: StoredRecipe }>(`/v1/recipes/${recipeId}/video-link`, {
+// Full-replacement -- pass the whole current list of links (after
+// whatever add/edit/remove just happened in the UI), same as the backend
+// route expects.
+export async function setRecipeLinksViaBackend(recipeId: string, links: { url: string }[]): Promise<StoredRecipe> {
+  const data = await backendFetch<{ recipe: StoredRecipe }>(`/v1/recipes/${recipeId}/links`, {
     method: 'PUT',
-    body: { video_url: videoUrl },
+    body: { links },
   });
   return data.recipe;
 }

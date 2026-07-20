@@ -1,10 +1,12 @@
 import React, { useRef, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, StyleSheet, Text, TextInput, View } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
+import * as ImagePicker from 'expo-image-picker';
 import { BottomSheet } from './BottomSheet';
 import { PressableScale } from './PressableScale';
 import {
   createRecipeViaBackend,
+  importRecipeFromImageViaBackend,
   importRecipeFromPdfViaBackend,
   importRecipeFromTextViaBackend,
   importRecipeFromUrlViaBackend,
@@ -16,7 +18,7 @@ import { spacing } from '../theme/spacing';
 import { fontFamily } from '../theme/fonts';
 import type { StoredRecipe } from '../types';
 
-type ImportSegment = 'link' | 'pdf' | 'text';
+type ImportSegment = 'link' | 'photo' | 'pdf' | 'text';
 type ImportStatus = 'idle' | 'processing' | 'duplicate' | 'done';
 
 interface ImportRecipeSheetProps {
@@ -31,6 +33,10 @@ export function ImportRecipeSheet({ visible, onDismiss, onImported, onViewExisti
   const [linkValue, setLinkValue] = useState('');
   const [textValue, setTextValue] = useState('');
   const [pdfFile, setPdfFile] = useState<{ uri: string; name: string } | null>(null);
+  // previewUri is just for showing the thumbnail; dataUrl (base64) is what
+  // actually gets sent to the backend -- same split the recipe/profile photo
+  // pickers use elsewhere.
+  const [photo, setPhoto] = useState<{ previewUri: string; dataUrl: string } | null>(null);
   const [status, setStatus] = useState<ImportStatus>('idle');
   const [error, setError] = useState<string | null>(null);
   const [importedRecipe, setImportedRecipe] = useState<StoredRecipe | null>(null);
@@ -52,6 +58,7 @@ export function ImportRecipeSheet({ visible, onDismiss, onImported, onViewExisti
     setLinkValue('');
     setTextValue('');
     setPdfFile(null);
+    setPhoto(null);
     setStatus('idle');
     setError(null);
     setImportedRecipe(null);
@@ -76,8 +83,32 @@ export function ImportRecipeSheet({ visible, onDismiss, onImported, onViewExisti
     }
   };
 
+  const handlePickPhoto = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      setError('Enable photo library access in Settings to add a screenshot.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      quality: 0.7,
+      base64: true,
+    });
+
+    if (result.canceled) return;
+    const asset = result.assets[0];
+    if (!asset?.base64) return;
+
+    setPhoto({ previewUri: asset.uri, dataUrl: `data:${asset.mimeType ?? 'image/jpeg'};base64,${asset.base64}` });
+    setError(null);
+  };
+
   const handleSubmit = async () => {
     if (segment === 'link' && !linkValue.trim()) {
+      return;
+    }
+    if (segment === 'photo' && !photo) {
       return;
     }
     if (segment === 'pdf' && !pdfFile) {
@@ -93,9 +124,11 @@ export function ImportRecipeSheet({ visible, onDismiss, onImported, onViewExisti
       const outcome =
         segment === 'link'
           ? await importRecipeFromUrlViaBackend(linkValue.trim())
-          : segment === 'pdf' && pdfFile
-            ? await importRecipeFromPdfViaBackend(pdfFile)
-            : await importRecipeFromTextViaBackend(textValue.trim());
+          : segment === 'photo' && photo
+            ? await importRecipeFromImageViaBackend(photo.dataUrl)
+            : segment === 'pdf' && pdfFile
+              ? await importRecipeFromPdfViaBackend(pdfFile)
+              : await importRecipeFromTextViaBackend(textValue.trim());
 
       if (outcome.kind === 'duplicate') {
         setDuplicateMatch({ existing: outcome.existing, candidate: outcome.candidate });
@@ -148,7 +181,7 @@ export function ImportRecipeSheet({ visible, onDismiss, onImported, onViewExisti
       {status === 'processing' ? (
         <View style={styles.processing}>
           <ActivityIndicator color={colors.accent} />
-          <Text style={styles.processingText}>Formatting your recipe… Claude is structuring ingredients, steps, and tags</Text>
+          <Text style={styles.processingText}>Formatting your recipe… we're structuring ingredients, steps, and tags</Text>
         </View>
       ) : status === 'duplicate' && duplicateMatch ? (
         <View style={styles.processing}>
@@ -180,14 +213,14 @@ export function ImportRecipeSheet({ visible, onDismiss, onImported, onViewExisti
       ) : (
         <>
           <Text style={styles.title}>Add a recipe</Text>
-          <Text style={styles.subtitle}>Claude formats it for your cookbook</Text>
+          <Text style={styles.subtitle}>We format it for your cookbook</Text>
 
           <View style={styles.segmentTrack}>
-            {(['link', 'pdf', 'text'] as const).map((option) => {
+            {(['link', 'photo', 'pdf', 'text'] as const).map((option) => {
               const active = option === segment;
               return (
                 // Wrapping each option in a plain flex:1 View (instead of putting
-                // flex:1 on PressableScale's own style) keeps the three segments
+                // flex:1 on PressableScale's own style) keeps the segments
                 // evenly sized — PressableScale forwards `style` to its inner
                 // Animated.View, which isn't the row's real flex child, so flex
                 // values placed there don't distribute space correctly.
@@ -196,8 +229,8 @@ export function ImportRecipeSheet({ visible, onDismiss, onImported, onViewExisti
                     onPress={() => setSegment(option)}
                     style={[styles.segmentOption, active && styles.segmentOptionActive]}
                   >
-                    <Text style={[styles.segmentLabel, active && styles.segmentLabelActive]}>
-                      {option === 'link' ? 'Link' : option === 'pdf' ? 'PDF' : 'Text'}
+                    <Text style={[styles.segmentLabel, active && styles.segmentLabelActive]} numberOfLines={1}>
+                      {option === 'link' ? 'Link' : option === 'photo' ? 'Photo' : option === 'pdf' ? 'PDF' : 'Text'}
                     </Text>
                   </PressableScale>
                 </View>
@@ -206,13 +239,27 @@ export function ImportRecipeSheet({ visible, onDismiss, onImported, onViewExisti
           </View>
 
           {segment === 'link' ? (
-            <TextInput
-              value={linkValue}
-              onChangeText={setLinkValue}
-              placeholder="Paste a recipe link"
-              autoCapitalize="none"
-              style={styles.input}
-            />
+            <>
+              <TextInput
+                value={linkValue}
+                onChangeText={setLinkValue}
+                placeholder="Paste a recipe link"
+                autoCapitalize="none"
+                style={styles.input}
+              />
+              <Text style={styles.helperText}>
+                Some sites (Instagram, TikTok) block outside access entirely — use Photo instead and paste a
+                screenshot of the caption.
+              </Text>
+            </>
+          ) : segment === 'photo' ? (
+            <PressableScale onPress={handlePickPhoto} style={photo ? styles.photoPreviewZone : styles.dropZone}>
+              {photo ? (
+                <Image source={{ uri: photo.previewUri }} style={styles.photoPreviewImage} resizeMode="cover" />
+              ) : (
+                <Text style={styles.dropZoneText}>+ Choose a screenshot</Text>
+              )}
+            </PressableScale>
           ) : segment === 'pdf' ? (
             <PressableScale onPress={handlePickPdf} style={styles.dropZone}>
               <Text style={styles.dropZoneText}>{pdfFile?.name ?? '+ Choose a PDF'}</Text>
@@ -328,6 +375,21 @@ const styles = StyleSheet.create({
     color: colors.subtext,
     fontSize: 14,
     fontFamily: fontFamily.semiBold,
+  },
+  photoPreviewZone: {
+    borderRadius: spacing.radiusCard,
+    overflow: 'hidden',
+    height: 160,
+  },
+  photoPreviewImage: {
+    width: '100%',
+    height: '100%',
+  },
+  helperText: {
+    color: colors.subtext,
+    fontSize: 11.5,
+    lineHeight: 15,
+    marginTop: 8,
   },
   errorText: {
     color: colors.danger,

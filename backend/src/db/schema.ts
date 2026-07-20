@@ -47,8 +47,17 @@ export const recipes = pgTable(
     allergenWarnings: jsonb('allergen_warnings').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
     currentVersionId: uuid('current_version_id'),
     imageUrl: text('image_url'),
+    // videoUrl/videoPlatform are no longer written to by the app -- superseded
+    // by `links` below, which supports more than one per recipe. Left in
+    // place (rather than dropped) purely so the one-time backfill script
+    // (backend/src/scripts/backfillLinks.ts) has something to read; safe to
+    // drop in a later migration once that's run against production.
     videoUrl: text('video_url'),
     videoPlatform: varchar('video_platform', { length: 16 }),
+    // Replaces the old single videoUrl/videoPlatform columns above -- a
+    // recipe can now carry multiple reference links (e.g. the original video
+    // plus a written source), not just one. Each entry is { url, platform }.
+    links: jsonb('links').$type<{ url: string; platform: string }[]>().notNull().default(sql`'[]'::jsonb`),
     sourceType: varchar('source_type', { length: 32 }).notNull().default('generated'),
     sourceUrl: text('source_url'),
     sourceDomain: text('source_domain'),
