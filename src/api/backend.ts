@@ -32,7 +32,18 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
     // Imported lazily so this module doesn't hard-require @clerk/expo to
     // have a provider mounted when Clerk isn't configured at all.
     const { getClerkInstance } = await import('@clerk/expo');
-    for (let attempt = 0; attempt < 5; attempt += 1) {
+    // 5 attempts * 150ms (~750ms total) was enough for a session restored
+    // from the token cache on a normal cold launch, but not for the very
+    // first fetch right after a brand-new sign-in/sign-up finalize() on a
+    // fresh native build -- ClerkAuthGate's `isSignedIn` (a React hook
+    // state) can flip true, and the screen mount + first cookbook fetch can
+    // both happen, before the underlying Clerk singleton's own `session`
+    // object has actually attached. That raced fetch failed fast, got
+    // logged (not shown), and looked exactly like "no recipes, no spinner,
+    // no error" from the user's side. 25 * 200ms (~5s) gives that one-time
+    // hydration real room without meaningfully delaying the normal case,
+    // where a token is usually available on the first or second attempt.
+    for (let attempt = 0; attempt < 25; attempt += 1) {
       try {
         const clerk = getClerkInstance();
         const token = await clerk.session?.getToken();
@@ -42,7 +53,7 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
       } catch {
         // keep retrying — session may still be hydrating
       }
-      await new Promise((resolve) => setTimeout(resolve, 150));
+      await new Promise((resolve) => setTimeout(resolve, 200));
     }
     throw new Error('No active Clerk session available yet. Please try again in a moment.');
   }
