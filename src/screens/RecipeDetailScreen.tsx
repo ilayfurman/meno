@@ -215,10 +215,15 @@ export function RecipeDetailScreen() {
       return;
     }
 
+    // Matches the aspect ratio the photo is actually displayed at (below,
+    // and on the Cookbook grid card) -- previously this cropped to 7:5 while
+    // the grid card shows it at 1:1, so resizeMode="cover" silently cropped
+    // it *again*, further than what the user chose in the picker. Keeping
+    // one aspect ratio everywhere means what you crop is what you get.
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       allowsEditing: true,
-      aspect: [7, 5],
+      aspect: [1, 1],
       quality: 0.5,
       base64: true,
     });
@@ -250,7 +255,7 @@ export function RecipeDetailScreen() {
 
         <MattedPhoto
           uri={recipe.image_url}
-          aspectRatio={1.4}
+          aspectRatio={1}
           borderRadius={22}
           onEditPress={handleEditPhoto}
           editing={photoUploading}

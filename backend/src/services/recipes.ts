@@ -28,18 +28,31 @@ function rowToVersion(row: VersionRow): RecipeVersion {
 // while still inside its own transaction.
 async function assembleStoredRecipe(
   recipeRow: RecipeRow,
-  isFavorite: boolean,
+  // Accepts either an already-known boolean (e.g. `false` for a recipe that
+  // was just created and can't be a favorite yet) or a still-in-flight
+  // Promise<boolean> from getFavoriteFlag(). Every caller used to `await
+  // getFavoriteFlag(...)` before calling this function, which forced that
+  // query and the versions query below to run one after another instead of
+  // together -- on a remote Postgres connection (Neon) each round trip adds
+  // real latency, and that serial chain (recipe row -> favorite flag ->
+  // versions) was the main reason opening a recipe took close to a second.
+  // Accepting a Promise here lets callers kick off both queries at once.
+  isFavorite: boolean | Promise<boolean>,
   // Structural (just the one method we use) rather than `typeof db` --
   // the transaction callback's `tx` has the same query-builder methods but
   // isn't assignable to `typeof db` itself (it lacks the `$client` property
   // drizzle's factory return type carries).
   executor: Pick<typeof db, 'select'> = db,
 ): Promise<StoredRecipe> {
-  const versionRows = await executor
-    .select()
-    .from(recipeVersions)
-    .where(eq(recipeVersions.recipeId, recipeRow.id))
-    .orderBy(asc(recipeVersions.versionNumber));
+  const [resolvedIsFavorite, versionRows] = await Promise.all([
+    Promise.resolve(isFavorite),
+    executor
+      .select()
+      .from(recipeVersions)
+      .where(eq(recipeVersions.recipeId, recipeRow.id))
+      .orderBy(asc(recipeVersions.versionNumber)),
+  ]);
+  isFavorite = resolvedIsFavorite;
 
   const versions = versionRows.map(rowToVersion);
   const current = versions.find((v) => v.id === recipeRow.currentVersionId) ?? versions[versions.length - 1];
@@ -255,7 +268,7 @@ export async function addRecipeVersion(
   if (!recipeRow) {
     return null;
   }
-  return assembleStoredRecipe(recipeRow, await getFavoriteFlag(userId, recipeId));
+  return assembleStoredRecipe(recipeRow, getFavoriteFlag(userId, recipeId));
 }
 
 export interface UpdateVersionInput {
@@ -307,7 +320,7 @@ export async function updateRecipeVersion(
   if (!recipeRow) {
     return null;
   }
-  return assembleStoredRecipe(recipeRow, await getFavoriteFlag(userId, recipeId));
+  return assembleStoredRecipe(recipeRow, getFavoriteFlag(userId, recipeId));
 }
 
 export async function setCurrentVersion(
@@ -334,7 +347,7 @@ export async function setCurrentVersion(
   if (!recipeRow) {
     return null;
   }
-  return assembleStoredRecipe(recipeRow, await getFavoriteFlag(userId, recipeId));
+  return assembleStoredRecipe(recipeRow, getFavoriteFlag(userId, recipeId));
 }
 
 /**
@@ -388,7 +401,7 @@ export async function deleteRecipeVersion(
   if (result.deletedRecipe || !result.recipeRow) {
     return { deletedRecipe: true, recipe: null };
   }
-  return { deletedRecipe: false, recipe: await assembleStoredRecipe(result.recipeRow, await getFavoriteFlag(userId, recipeId)) };
+  return { deletedRecipe: false, recipe: await assembleStoredRecipe(result.recipeRow, getFavoriteFlag(userId, recipeId)) };
 }
 
 /** Deletes the whole recipe family (all versions) in one step. */
@@ -401,6 +414,13 @@ export async function deleteRecipe(recipeId: string, userId: string): Promise<bo
 }
 
 export async function getRecipeByIdForUser(recipeId: string, userId: string): Promise<StoredRecipe | null> {
+  // This is the hottest read in the app -- it re-runs every time the
+  // Recipe Detail screen comes into focus. The favorite-flag query doesn't
+  // depend on the recipe row at all (both just need recipeId/userId, which
+  // are already in hand), so kick it off immediately instead of waiting for
+  // the recipe row to come back first -- it overlaps with that query
+  // instead of adding its own extra round trip on top.
+  const isFavoritePromise = getFavoriteFlag(userId, recipeId);
   const [recipeRow] = await db
     .select()
     .from(recipes)
@@ -409,7 +429,7 @@ export async function getRecipeByIdForUser(recipeId: string, userId: string): Pr
   if (!recipeRow) {
     return null;
   }
-  return assembleStoredRecipe(recipeRow, await getFavoriteFlag(userId, recipeId));
+  return assembleStoredRecipe(recipeRow, isFavoritePromise);
 }
 
 export async function saveRecipeToCookbook(userId: string, recipeId: string): Promise<boolean> {
@@ -609,7 +629,7 @@ export async function setRecipeLinks(
     .where(and(eq(recipes.id, recipeId), or(isNull(recipes.ownerUserId), eq(recipes.ownerUserId, userId))))
     .returning();
   if (!updated) return null;
-  return assembleStoredRecipe(updated, await getFavoriteFlag(userId, recipeId));
+  return assembleStoredRecipe(updated, getFavoriteFlag(userId, recipeId));
 }
 
 export async function setRecipePhoto(
@@ -623,7 +643,7 @@ export async function setRecipePhoto(
     .where(and(eq(recipes.id, recipeId), or(isNull(recipes.ownerUserId), eq(recipes.ownerUserId, userId))))
     .returning();
   if (!updated) return null;
-  return assembleStoredRecipe(updated, await getFavoriteFlag(userId, recipeId));
+  return assembleStoredRecipe(updated, getFavoriteFlag(userId, recipeId));
 }
 
 export async function removeFromCookbook(userId: string, recipeId: string) {
