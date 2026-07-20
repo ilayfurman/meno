@@ -29,6 +29,13 @@
       "when": 1784249267387,
       "tag": "0003_add_recipe_image_url",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1784511067022,
+      "tag": "0004_clever_mister_fear",
+      "breakpoints": true
     }
   ]
 }
