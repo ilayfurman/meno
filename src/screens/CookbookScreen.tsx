@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Dimensions, FlatList, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { CookbookRecipeCard } from '../components/CookbookRecipeCard';
@@ -16,6 +16,15 @@ import { elevation } from '../theme/elevation';
 import type { CookbookListItem, StoredRecipe } from '../types';
 import type { CookbookFilter, CookbookSortKey } from '../types/cookbook';
 import type { RootStackParamList } from '../types/navigation';
+
+// Cards used `flex: 1` inside a 2-column row, which works fine when a row
+// is full -- but when the last row has only one card (an odd total count),
+// a lone flex:1 item has no sibling to share the row with, so it stretches
+// to fill the whole row width instead of staying half-width. Computing a
+// fixed card width up front (independent of how many siblings happen to be
+// in its row) keeps every card the same size and left-aligned, odd one out
+// included.
+const CARD_WIDTH = (Dimensions.get('window').width - spacing.screenPadding * 2 - spacing.gridGap) / 2;
 
 const sortOptions: Array<{ key: CookbookSortKey; label: string }> = [
   { key: 'recent', label: 'Recently saved' },
@@ -298,7 +307,7 @@ const styles = StyleSheet.create({
     gap: spacing.gridGap,
   },
   gridItem: {
-    flex: 1,
+    width: CARD_WIDTH,
     marginBottom: spacing.gridGap,
   },
   title: {

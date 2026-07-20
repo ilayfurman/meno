@@ -25,7 +25,19 @@ export function MattedPhoto({ uri, aspectRatio = 1, borderRadius = 18, onEditPre
     <View style={[styles.shadowWrap, { aspectRatio, borderRadius }]}>
       <View style={[styles.mat, { borderRadius }]}>
         {uri ? (
-          <Image source={{ uri }} style={[styles.image, { borderRadius: borderRadius - 6 }]} resizeMode="cover" />
+          // key={uri} forces a clean remount whenever the photo changes,
+          // instead of React reusing the same <Image> instance and just
+          // swapping its source.uri prop. That reuse path is the known RN
+          // gotcha where an on-screen Image doesn't reliably redecode a new
+          // uri (especially base64 data: URIs) -- which is why a just-added
+          // recipe photo wouldn't show up on the Cookbook grid until a
+          // second navigation remounted the card from scratch.
+          <Image
+            key={uri}
+            source={{ uri }}
+            style={[styles.image, { borderRadius: borderRadius - 6 }]}
+            resizeMode="cover"
+          />
         ) : (
           <View style={[styles.placeholder, { borderRadius: borderRadius - 6 }]}>
             <Text style={styles.placeholderText}>recipe photo</Text>
