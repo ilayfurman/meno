@@ -27,7 +27,15 @@ const FALLBACK_CLERK_PUBLISHABLE_KEY = 'pk_test_bWF4aW11bS1sYWNld2luZy0yMi5jbGVy
 
 export const API_BASE_URL = env.EXPO_PUBLIC_API_BASE_URL?.trim() || FALLBACK_API_BASE_URL;
 export const DEV_CLERK_USER_ID = env.EXPO_PUBLIC_DEV_CLERK_USER_ID?.trim() ?? 'dev-local-user';
-export const USE_BACKEND_GENERATION = parseBool(env.EXPO_PUBLIC_USE_BACKEND_GENERATION, false);
+// Found the hard way: this one was still reading as unset in the same
+// broken-env-inlining build, which made every backend call (cookbook list,
+// cuisines, etc.) throw 'Backend integration is disabled.' before ever
+// hitting the network -- console showed this exact message. Same fix as
+// above: default to on (this app always talks to a real backend now) rather
+// than defaulting to off, so a flaky/missing env var can't silently disable
+// the whole app again. Set EXPO_PUBLIC_USE_BACKEND_GENERATION=false in .env
+// to deliberately turn it off for local testing.
+export const USE_BACKEND_GENERATION = parseBool(env.EXPO_PUBLIC_USE_BACKEND_GENERATION, true);
 // Falls back to the real key rather than '' -- previously blank meant
 // "dev-auth, no sign-in screen" (see App.tsx), but now that Clerk is fully
 // set up and this is meant to work as a real standalone app, an accidentally
