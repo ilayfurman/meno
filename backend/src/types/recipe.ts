@@ -51,6 +51,16 @@ export const recipeVersionSchema = z.object({
   created_at: z.string().nullable().optional(),
 });
 
+// Everything about a version except its actual content. Used for the
+// `versions` list on a recipe -- previously that array held full
+// recipeVersionSchema entries (ingredients + steps) for every past version,
+// which meant a recipe you'd iterated on a few times shipped several
+// versions' worth of ingredients/steps on every single load, even though
+// the UI only shows one version's content at a time. The full content for
+// whichever version is actually being viewed is fetched on demand instead
+// (GET /v1/recipes/:id/versions/:versionId) -- see getVersionContent.
+export const recipeVersionSummarySchema = recipeVersionSchema.omit({ ingredients: true, steps: true });
+
 export const recipeLinkSchema = z.object({
   url: z.string().url(),
   platform: z.enum(['tiktok', 'instagram', 'youtube', 'other']),
@@ -67,13 +77,12 @@ export const storedRecipeSchema = z.object({
   dietary_tags: z.array(z.string()),
   allergen_warnings: z.array(z.string()),
   links: z.array(recipeLinkSchema),
-  // Plain string rather than z.string().url() -- this is usually a data:
-  // URL (base64-encoded photo the user picked from their library), which
-  // can be a few hundred KB of text and doesn't need URL-shape validation.
+  // A URL to GET /v1/recipes/:id/photo (or null), not the raw image data --
+  // see buildPhotoUrl in services/recipes.ts for why.
   image_url: z.string().nullable(),
   is_favorite: z.boolean(),
   current_version: recipeVersionSchema,
-  versions: z.array(recipeVersionSchema),
+  versions: z.array(recipeVersionSummarySchema),
 });
 
 export const createRecipeSchema = z.object({
@@ -116,9 +125,27 @@ export const updateRecipeLinksSchema = z.object({
   links: z.array(z.object({ url: z.string().url() })),
 });
 
+// Recipe photos are served back out through GET /v1/recipes/:id/photo with
+// whatever MIME type was embedded in this data: URL reflected verbatim into
+// the response's Content-Type (see parseDataUrl in services/recipes.ts) --
+// without this allowlist, a client (or anyone hitting the API directly,
+// bypassing the picker) could store `data:text/html;base64,...` and turn
+// that route into one that serves attacker-controlled HTML/SVG from our own
+// origin. Restricting to real image types at write time closes that off at
+// the source, on top of the nosniff header the serve route also sets.
+const ALLOWED_PHOTO_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'] as const;
+
 export const updateRecipePhotoSchema = z.object({
-  image_url: z.string().nullable(),
+  image_url: z
+    .string()
+    .nullable()
+    .refine(
+      (value) => value === null || ALLOWED_PHOTO_MIME_TYPES.some((type) => value.startsWith(`data:${type};base64,`)),
+      { message: 'image_url must be a base64 data: URL of an allowed image type (jpeg, png, webp, heic, or heif).' },
+    ),
 });
+
+export { ALLOWED_PHOTO_MIME_TYPES };
 
 export const extractedRecipeSchema = z.object({
   // The model's own honest signal that the source (page text or image) it
@@ -163,6 +190,7 @@ export const duplicateCandidateSchema = z.object({
 
 export type StoredRecipe = z.infer<typeof storedRecipeSchema>;
 export type RecipeVersion = z.infer<typeof recipeVersionSchema>;
+export type RecipeVersionSummary = z.infer<typeof recipeVersionSummarySchema>;
 export type ExtractedRecipe = z.infer<typeof extractedRecipeSchema>;
 
 export const recipeSummarySchema = z.object({

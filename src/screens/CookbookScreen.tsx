@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Dimensions, FlatList, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -8,6 +8,7 @@ import { PressableScale } from '../components/PressableScale';
 import { BottomSheet } from '../components/BottomSheet';
 import { ImportRecipeSheet } from '../components/ImportRecipeSheet';
 import { getCookbookCuisinesViaBackend, getCookbookViaBackend, setFavoriteViaBackend } from '../api/backend';
+import { prefetchRecipe } from '../state/recipeCache';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
 import { typography } from '../theme/typography';
@@ -70,10 +71,20 @@ export function CookbookScreen() {
   const [sortBy, setSortBy] = useState<CookbookSortKey>('recent');
   const [sortSheetOpen, setSortSheetOpen] = useState(false);
   const [importSheetOpen, setImportSheetOpen] = useState(false);
-  // True until we've shown *something* -- so the empty state never flashes
-  // "No recipes match" while the very first fetch is still in flight.
-  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  // True whenever a top-level list fetch is in flight -- the very first
+  // load, or a fresh one triggered by changing search/filter/sort. Gates
+  // the grid to show a spinner instead of either a blank flash or the
+  // previous query's stale results sitting on screen looking "done" while
+  // a different result set is actually on the way (e.g. tapping Favorites
+  // used to leave the All results showing for a second before swapping,
+  // which read as "the tap didn't work" rather than "still loading").
+  const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  // Remembers which search/filter/sort combo we last successfully loaded,
+  // so loadCookbook can tell "the user changed the query" apart from "the
+  // screen just regained focus with the same query" (e.g. coming back from
+  // a recipe). Only the former should show the spinner -- see loadCookbook.
+  const lastLoadedQueryKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     const handle = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 300);
@@ -87,7 +98,20 @@ export function CookbookScreen() {
   // event and immediately whenever this identity changes while already
   // focused (e.g. typing in the search box), so there's no separate effect
   // needed to react to param changes.
+  //
+  // Every focus (including just navigating back from a recipe) runs this
+  // too, since that's also how edits/favorites made on that screen show up
+  // here. The spinner should only appear when the query itself changed,
+  // though -- a plain refocus with the same search/filter/sort almost
+  // always returns the same data, so clearing the grid and flashing a
+  // spinner over it would just be a jarring, pointless flicker on the
+  // single most common navigation in the app (opening and closing a
+  // recipe). Comparing against the last query we actually loaded is what
+  // tells the two cases apart.
   const loadCookbook = useCallback(async () => {
+    const queryKey = JSON.stringify({ search: debouncedSearch, filter: activeFilter, sort: sortBy });
+    const showLoadingState = queryKey !== lastLoadedQueryKeyRef.current;
+    if (showLoadingState) setIsLoading(true);
     try {
       const page = await getCookbookViaBackend({
         limit: PAGE_SIZE,
@@ -99,6 +123,11 @@ export function CookbookScreen() {
       setRecipes(page.recipes);
       setOffset(page.recipes.length);
       setHasMore(page.hasMore);
+      lastLoadedQueryKeyRef.current = queryKey;
+      // Warm the cache for just this page (not the whole cookbook -- see
+      // prefetchRecipe) so tapping into any card already on screen loads
+      // the detail screen instantly instead of waiting on a fresh fetch.
+      page.recipes.forEach((item) => prefetchRecipe(item.id));
     } catch (err) {
       // Leave prior state on load failure -- a toast/retry affordance can be
       // added later -- but at least log it. This used to fail completely
@@ -106,7 +135,7 @@ export function CookbookScreen() {
       // vanish) went unnoticed instead of showing up as a visible error.
       console.error('Failed to load cookbook:', err);
     } finally {
-      setIsInitialLoading(false);
+      if (showLoadingState) setIsLoading(false);
     }
   }, [debouncedSearch, activeFilter, sortBy]);
 
@@ -131,7 +160,7 @@ export function CookbookScreen() {
   );
 
   const loadMore = useCallback(async () => {
-    if (isLoadingMore || !hasMore || isInitialLoading) return;
+    if (isLoadingMore || !hasMore || isLoading) return;
     setIsLoadingMore(true);
     try {
       const page = await getCookbookViaBackend({
@@ -144,6 +173,7 @@ export function CookbookScreen() {
       setRecipes((prev) => [...prev, ...page.recipes]);
       setOffset((prev) => prev + page.recipes.length);
       setHasMore(page.hasMore);
+      page.recipes.forEach((item) => prefetchRecipe(item.id));
     } catch (err) {
       console.error('Failed to load more recipes:', err);
       // Stop auto-retrying against a broken connection -- the user can
@@ -152,7 +182,7 @@ export function CookbookScreen() {
     } finally {
       setIsLoadingMore(false);
     }
-  }, [offset, hasMore, isLoadingMore, isInitialLoading, debouncedSearch, activeFilter, sortBy]);
+  }, [offset, hasMore, isLoadingMore, isLoading, debouncedSearch, activeFilter, sortBy]);
 
   const handleToggleFavorite = async (recipe: CookbookListItem) => {
     const next = !recipe.is_favorite;
@@ -177,7 +207,7 @@ export function CookbookScreen() {
   return (
     <View style={styles.screen}>
       <FlatList
-        data={recipes}
+        data={isLoading ? [] : recipes}
         keyExtractor={(item) => item.id}
         numColumns={2}
         columnWrapperStyle={styles.gridRow}
@@ -243,7 +273,7 @@ export function CookbookScreen() {
           </View>
         )}
         ListEmptyComponent={
-          isInitialLoading ? (
+          isLoading ? (
             <View style={styles.loadingWrap}>
               <ActivityIndicator color={colors.accent} />
             </View>

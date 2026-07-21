@@ -131,6 +131,12 @@ export interface RecipeVersion {
   created_at?: string | null;
 }
 
+// Everything about a version except its content -- what StoredRecipe.versions
+// actually carries now (see the comment there). Fetch a version's full
+// ingredients/steps on demand via getRecipeVersionViaBackend when the user
+// taps into it.
+export type RecipeVersionSummary = Omit<RecipeVersion, 'ingredients' | 'steps'>;
+
 export type VideoPlatform = 'tiktok' | 'instagram' | 'youtube' | 'other';
 
 export interface RecipeLink {
@@ -152,7 +158,10 @@ export interface StoredRecipe {
   image_url: string | null;
   is_favorite: boolean;
   current_version: RecipeVersion;
-  versions: RecipeVersion[];
+  // Summary-only -- doesn't carry ingredients/steps for anything but the
+  // current version, which lives in current_version above. See
+  // RecipeVersionSummary.
+  versions: RecipeVersionSummary[];
 }
 
 // Lean shape for the Cookbook grid -- what CookbookRecipeCard actually

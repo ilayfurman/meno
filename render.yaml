@@ -47,6 +47,12 @@ services:
         value: openai/gpt-oss-120b
       - key: CLERK_SECRET_KEY
         sync: false
+      # Signs recipe photo URLs (see PHOTO_URL_SECRET in config/env.ts) --
+      # generate a real value with `openssl rand -hex 32` and set it in the
+      # Render dashboard. The server refuses to boot in production if this
+      # is left on its default value.
+      - key: PHOTO_URL_SECRET
+        sync: false
       - key: ALLOWED_IMPORT_DOMAINS
         value: ''
       - key: GEN_RATE_LIMIT_PER_MINUTE

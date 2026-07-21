@@ -1,8 +1,57 @@
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import { and, asc, desc, eq, ilike, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { cookbookItems, recipeVersions, recipes } from '../db/schema.js';
-import type { RecipeVersion, StoredRecipe } from '../types/recipe.js';
+import type { RecipeVersion, RecipeVersionSummary, StoredRecipe } from '../types/recipe.js';
 import { detectVideoPlatform } from '../utils/videoPlatform.js';
+import { env } from '../config/env.js';
+
+// The recipe/cookbook JSON used to embed the photo directly as a base64
+// data: URL -- simple, but it meant every list/detail fetch transferred the
+// full image bytes (often the single biggest part of the response) even
+// when nothing about the photo had changed since the last time. Handing
+// back a URL to a dedicated endpoint instead means: the JSON payload stays
+// small and fast regardless of photo size, and React Native's <Image> can
+// cache the photo itself by URL so it's only ever downloaded once. The `v=`
+// query param is a cache-buster tied to the recipe's updatedAt -- it changes
+// whenever the recipe (including just the photo) is edited, so a stale
+// cached image never lingers, while an unchanged photo can be cached
+// indefinitely.
+//
+// That endpoint is registered before authGuard (see app.ts) -- it has to be
+// reachable with no Clerk session, since a plain <Image source={{uri}}>
+// can't attach a Bearer header. That's fine as long as the URL itself can't
+// be forged or guessed: `sig` is an HMAC over the recipe id + the `v`
+// cache-buster, signed with a server-only secret (PHOTO_URL_SECRET). Only
+// the server can produce a valid signature, and it only ever does so inside
+// an authenticated response (getRecipeByIdForUser, listCookbookPage, etc.),
+// so nobody can construct a working photo URL without first having gone
+// through an authenticated request for that recipe. This is the same
+// pattern as an S3/CDN presigned URL -- anonymous-but-unforgeable, not
+// "unauthenticated," and it's what turns "any UUID holder can fetch this
+// forever" into "only someone who legitimately received this exact URL
+// can."
+function signPhotoUrl(recipeId: string, version: number): string {
+  return createHmac('sha256', env.PHOTO_URL_SECRET).update(`${recipeId}:${version}`).digest('hex');
+}
+
+export function verifyPhotoUrlSignature(recipeId: string, version: number, signature: string): boolean {
+  const expected = signPhotoUrl(recipeId, version);
+  const expectedBuf = Buffer.from(expected, 'hex');
+  const providedBuf = Buffer.from(signature, 'hex');
+  // Constant-time comparison -- a naive === would let an attacker recover
+  // the correct signature one byte at a time by timing how long comparison
+  // takes to fail (a timing side-channel), the same reason password checks
+  // never use plain string equality either.
+  return expectedBuf.length === providedBuf.length && timingSafeEqual(expectedBuf, providedBuf);
+}
+
+function buildPhotoUrl(recipeId: string, imageUrl: string | null, updatedAt: Date): string | null {
+  if (!imageUrl) return null;
+  const version = updatedAt.getTime();
+  const sig = signPhotoUrl(recipeId, version);
+  return `${env.PUBLIC_BASE_URL}/v1/recipes/${recipeId}/photo?v=${version}&sig=${sig}`;
+}
 
 type RecipeRow = typeof recipes.$inferSelect;
 type VersionRow = typeof recipeVersions.$inferSelect;
@@ -13,6 +62,15 @@ function rowToVersion(row: VersionRow): RecipeVersion {
     version_number: row.versionNumber,
     ingredients: row.ingredients as RecipeVersion['ingredients'],
     steps: row.steps as RecipeVersion['steps'],
+    change_note: row.changeNote,
+    created_at: row.createdAt.toISOString(),
+  };
+}
+
+function rowToVersionSummary(row: VersionRow): RecipeVersionSummary {
+  return {
+    id: row.id,
+    version_number: row.versionNumber,
     change_note: row.changeNote,
     created_at: row.createdAt.toISOString(),
   };
@@ -43,6 +101,16 @@ async function assembleStoredRecipe(
   // isn't assignable to `typeof db` itself (it lacks the `$client` property
   // drizzle's factory return type carries).
   executor: Pick<typeof db, 'select'> = db,
+  // Whether `versions` should be summary-only (the new, smaller shape) or
+  // carry full ingredients/steps for every past version (the shape every
+  // route returned before this optimization). This never changes what's
+  // queried from the DB -- versionRows below always has full content either
+  // way, so this is purely a serialization choice -- it exists so a client
+  // that was built before `versions` became summary-only (i.e. doesn't know
+  // to pass `?versions=summary`) keeps getting exactly the response shape it
+  // already expects, forever, regardless of what the backend defaults to
+  // for everyone else. See wantsLeanVersions in app.ts.
+  leanVersions = true,
 ): Promise<StoredRecipe> {
   const [resolvedIsFavorite, versionRows] = await Promise.all([
     Promise.resolve(isFavorite),
@@ -54,12 +122,21 @@ async function assembleStoredRecipe(
   ]);
   isFavorite = resolvedIsFavorite;
 
-  const versions = versionRows.map(rowToVersion);
-  const current = versions.find((v) => v.id === recipeRow.currentVersionId) ?? versions[versions.length - 1];
+  // Full ingredients/steps are only needed for whichever version is actually
+  // "current" -- the `versions` list below is summary-only (see
+  // recipeVersionSummarySchema) precisely so a recipe with several past
+  // iterations doesn't ship all of their content on every load. Any other
+  // version's full content is fetched on demand via getVersionContent when
+  // the user actually taps into it.
+  const current =
+    versionRows.map(rowToVersion).find((v) => v.id === recipeRow.currentVersionId) ??
+    (versionRows.length > 0 ? rowToVersion(versionRows[versionRows.length - 1]!) : undefined);
 
   if (!current) {
     throw new Error(`Recipe ${recipeRow.id} has no versions`);
   }
+
+  const versions = leanVersions ? versionRows.map(rowToVersionSummary) : versionRows.map(rowToVersion);
 
   return {
     id: recipeRow.id,
@@ -72,7 +149,7 @@ async function assembleStoredRecipe(
     dietary_tags: recipeRow.dietaryTags as string[],
     allergen_warnings: recipeRow.allergenWarnings as string[],
     links: (recipeRow.links as StoredRecipe['links']) ?? [],
-    image_url: recipeRow.imageUrl,
+    image_url: buildPhotoUrl(recipeRow.id, recipeRow.imageUrl, recipeRow.updatedAt),
     is_favorite: isFavorite,
     current_version: current,
     versions,
@@ -178,7 +255,11 @@ export interface CreateRecipeInput {
   source_url?: string | null;
 }
 
-export async function createRecipeForUser(userId: string, input: CreateRecipeInput): Promise<StoredRecipe> {
+export async function createRecipeForUser(
+  userId: string,
+  input: CreateRecipeInput,
+  leanVersions = true,
+): Promise<StoredRecipe> {
   return db.transaction(async (tx) => {
     const [recipeRow] = await tx
       .insert(recipes)
@@ -211,7 +292,7 @@ export async function createRecipeForUser(userId: string, input: CreateRecipeInp
 
     await tx.update(recipes).set({ currentVersionId: versionRow!.id }).where(eq(recipes.id, recipeRow!.id));
 
-    return assembleStoredRecipe({ ...recipeRow!, currentVersionId: versionRow!.id }, false, tx);
+    return assembleStoredRecipe({ ...recipeRow!, currentVersionId: versionRow!.id }, false, tx, leanVersions);
   });
 }
 
@@ -226,6 +307,7 @@ export async function addRecipeVersion(
   recipeId: string,
   userId: string,
   input: AddVersionInput,
+  leanVersions = true,
 ): Promise<StoredRecipe | null> {
   const recipeRow = await db.transaction(async (tx) => {
     const [existing] = await tx
@@ -268,7 +350,7 @@ export async function addRecipeVersion(
   if (!recipeRow) {
     return null;
   }
-  return assembleStoredRecipe(recipeRow, getFavoriteFlag(userId, recipeId));
+  return assembleStoredRecipe(recipeRow, getFavoriteFlag(userId, recipeId), db, leanVersions);
 }
 
 export interface UpdateVersionInput {
@@ -287,6 +369,7 @@ export async function updateRecipeVersion(
   userId: string,
   versionId: string,
   input: UpdateVersionInput,
+  leanVersions = true,
 ): Promise<StoredRecipe | null> {
   const recipeRow = await db.transaction(async (tx) => {
     const [existing] = await tx
@@ -320,13 +403,14 @@ export async function updateRecipeVersion(
   if (!recipeRow) {
     return null;
   }
-  return assembleStoredRecipe(recipeRow, getFavoriteFlag(userId, recipeId));
+  return assembleStoredRecipe(recipeRow, getFavoriteFlag(userId, recipeId), db, leanVersions);
 }
 
 export async function setCurrentVersion(
   recipeId: string,
   userId: string,
   versionId: string,
+  leanVersions = true,
 ): Promise<StoredRecipe | null> {
   const recipeRow = await db.transaction(async (tx) => {
     const [version] = await tx
@@ -347,7 +431,7 @@ export async function setCurrentVersion(
   if (!recipeRow) {
     return null;
   }
-  return assembleStoredRecipe(recipeRow, getFavoriteFlag(userId, recipeId));
+  return assembleStoredRecipe(recipeRow, getFavoriteFlag(userId, recipeId), db, leanVersions);
 }
 
 /**
@@ -359,6 +443,7 @@ export async function deleteRecipeVersion(
   recipeId: string,
   userId: string,
   versionId: string,
+  leanVersions = true,
 ): Promise<{ deletedRecipe: boolean; recipe: StoredRecipe | null }> {
   const result = await db.transaction(async (tx) => {
     const [recipeRow] = await tx
@@ -401,7 +486,10 @@ export async function deleteRecipeVersion(
   if (result.deletedRecipe || !result.recipeRow) {
     return { deletedRecipe: true, recipe: null };
   }
-  return { deletedRecipe: false, recipe: await assembleStoredRecipe(result.recipeRow, getFavoriteFlag(userId, recipeId)) };
+  return {
+    deletedRecipe: false,
+    recipe: await assembleStoredRecipe(result.recipeRow, getFavoriteFlag(userId, recipeId), db, leanVersions),
+  };
 }
 
 /** Deletes the whole recipe family (all versions) in one step. */
@@ -413,7 +501,11 @@ export async function deleteRecipe(recipeId: string, userId: string): Promise<bo
   return result.length > 0;
 }
 
-export async function getRecipeByIdForUser(recipeId: string, userId: string): Promise<StoredRecipe | null> {
+export async function getRecipeByIdForUser(
+  recipeId: string,
+  userId: string,
+  leanVersions = true,
+): Promise<StoredRecipe | null> {
   // This is the hottest read in the app -- it re-runs every time the
   // Recipe Detail screen comes into focus. The favorite-flag query doesn't
   // depend on the recipe row at all (both just need recipeId/userId, which
@@ -429,7 +521,68 @@ export async function getRecipeByIdForUser(recipeId: string, userId: string): Pr
   if (!recipeRow) {
     return null;
   }
-  return assembleStoredRecipe(recipeRow, isFavoritePromise);
+  return assembleStoredRecipe(recipeRow, isFavoritePromise, db, leanVersions);
+}
+
+// Backs GET /v1/recipes/:id/versions/:versionId -- the on-demand fetch for
+// a single past version's full ingredients/steps, now that the eager
+// `versions` list on a recipe only carries summaries (see the comment on
+// assembleStoredRecipe). Scoped to the requesting user the same way every
+// other per-recipe query in this file is.
+export async function getVersionContent(
+  recipeId: string,
+  userId: string,
+  versionId: string,
+): Promise<RecipeVersion | null> {
+  const [row] = await db
+    .select({ version: recipeVersions })
+    .from(recipeVersions)
+    .innerJoin(recipes, eq(recipeVersions.recipeId, recipes.id))
+    .where(
+      and(
+        eq(recipeVersions.id, versionId),
+        eq(recipeVersions.recipeId, recipeId),
+        or(isNull(recipes.ownerUserId), eq(recipes.ownerUserId, userId)),
+      ),
+    )
+    .limit(1);
+  if (!row) return null;
+  return rowToVersion(row.version);
+}
+
+// Backs the public GET /v1/recipes/:id/photo route -- deliberately NOT
+// scoped to a userId (unlike every other query in this file). That's safe
+// because the route requires a valid HMAC signature over id+updatedAt (see
+// verifyPhotoUrlSignature/buildPhotoUrl above) before this is ever called,
+// not because of anything about the UUID itself.
+//
+// Returns updatedAt alongside the image so the route can reject a
+// signature that's for an older version of this recipe -- otherwise `v`
+// would only ever function as a cache-buster, not a revocation boundary:
+// replacing or removing a photo wouldn't actually invalidate any
+// previously-issued signed URL for the old one, since it would just start
+// resolving to whatever the current photo happens to be instead.
+export async function getRecipePhotoDataUrl(recipeId: string): Promise<{ dataUrl: string; updatedAt: Date } | null> {
+  const [row] = await db
+    .select({ imageUrl: recipes.imageUrl, updatedAt: recipes.updatedAt })
+    .from(recipes)
+    .where(eq(recipes.id, recipeId))
+    .limit(1);
+  if (!row?.imageUrl) return null;
+  return { dataUrl: row.imageUrl, updatedAt: row.updatedAt };
+}
+
+const DATA_URL_PATTERN = /^data:([^;,]+);base64,(.+)$/s;
+
+// Splits a `data:image/jpeg;base64,...` string (the format photos are
+// stored/uploaded in throughout this app) into a real Buffer plus its MIME
+// type, so the photo route can send actual image bytes with the right
+// Content-Type instead of a base64 JSON string.
+export function parseDataUrl(dataUrl: string): { buffer: Buffer; contentType: string } | null {
+  const match = DATA_URL_PATTERN.exec(dataUrl);
+  if (!match) return null;
+  const [, contentType, base64] = match;
+  return { buffer: Buffer.from(base64!, 'base64'), contentType: contentType! };
 }
 
 export async function saveRecipeToCookbook(userId: string, recipeId: string): Promise<boolean> {
@@ -524,6 +677,7 @@ export async function listCookbookPage(
       servings: recipes.servings,
       totalTimeMinutes: recipes.totalTimeMinutes,
       imageUrl: recipes.imageUrl,
+      updatedAt: recipes.updatedAt,
       currentVersionId: recipes.currentVersionId,
       isFavorite: cookbookItems.isFavorite,
     })
@@ -567,7 +721,7 @@ export async function listCookbookPage(
     cuisine: row.cuisine,
     servings: row.servings,
     total_time_minutes: row.totalTimeMinutes,
-    image_url: row.imageUrl,
+    image_url: buildPhotoUrl(row.id, row.imageUrl, row.updatedAt),
     is_favorite: row.isFavorite,
     version_count: versionCountByRecipeId.get(row.id) ?? 1,
     current_version_number: row.currentVersionId ? versionNumberByVersionId.get(row.currentVersionId) ?? 1 : 1,
@@ -619,6 +773,7 @@ export async function setRecipeLinks(
   recipeId: string,
   userId: string,
   links: { url: string }[],
+  leanVersions = true,
 ): Promise<StoredRecipe | null> {
   const [updated] = await db
     .update(recipes)
@@ -629,13 +784,14 @@ export async function setRecipeLinks(
     .where(and(eq(recipes.id, recipeId), or(isNull(recipes.ownerUserId), eq(recipes.ownerUserId, userId))))
     .returning();
   if (!updated) return null;
-  return assembleStoredRecipe(updated, getFavoriteFlag(userId, recipeId));
+  return assembleStoredRecipe(updated, getFavoriteFlag(userId, recipeId), db, leanVersions);
 }
 
 export async function setRecipePhoto(
   recipeId: string,
   userId: string,
   imageUrl: string | null,
+  leanVersions = true,
 ): Promise<StoredRecipe | null> {
   const [updated] = await db
     .update(recipes)
@@ -643,7 +799,7 @@ export async function setRecipePhoto(
     .where(and(eq(recipes.id, recipeId), or(isNull(recipes.ownerUserId), eq(recipes.ownerUserId, userId))))
     .returning();
   if (!updated) return null;
-  return assembleStoredRecipe(updated, getFavoriteFlag(userId, recipeId));
+  return assembleStoredRecipe(updated, getFavoriteFlag(userId, recipeId), db, leanVersions);
 }
 
 export async function removeFromCookbook(userId: string, recipeId: string) {
