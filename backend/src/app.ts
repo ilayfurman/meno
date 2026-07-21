@@ -1,4 +1,5 @@
 import Fastify from 'fastify';
+import compress from '@fastify/compress';
 import cors from '@fastify/cors';
 import sensible from '@fastify/sensible';
 import multipart from '@fastify/multipart';
@@ -41,6 +42,9 @@ import {
   findDuplicateBySourceUrl,
   findDuplicateByTitle,
   getRecipeByIdForUser,
+  getRecipePhotoDataUrl,
+  getVersionContent,
+  parseDataUrl,
   getCookbookStats,
   listCookbookCuisines,
   listCookbookPage,
@@ -141,12 +145,40 @@ export function createApp() {
     origin: true,
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
   });
+  // Compresses JSON responses (recipe text, cookbook pages) so larger
+  // payloads transfer faster over the phone's connection. Global threshold
+  // keeps it from bothering with tiny responses where gzip overhead isn't
+  // worth it.
+  void app.register(compress, { global: true, threshold: 1024 });
   void app.register(sensible);
   void app.register(multipart, {
     limits: { fileSize: env.MAX_IMPORT_RESPONSE_BYTES },
   });
 
   app.get('/health', async () => ({ ok: true }));
+
+  // Registered before the authGuard hook below, so this route is
+  // intentionally public -- see the long comment on getRecipePhotoDataUrl
+  // for why. `v` is just a cache-busting token (the recipe's updatedAt);
+  // it's not checked against anything, it only exists so the URL changes
+  // whenever the photo does.
+  app.get('/v1/recipes/:id/photo', async (request, reply) => {
+    const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
+    if (!params.success) {
+      return reply.code(404).send();
+    }
+    const dataUrl = await getRecipePhotoDataUrl(params.data.id);
+    if (!dataUrl) {
+      return reply.code(404).send();
+    }
+    const parsed = parseDataUrl(dataUrl);
+    if (!parsed) {
+      return reply.code(404).send();
+    }
+    reply.header('Cache-Control', 'private, max-age=31536000, immutable');
+    reply.type(parsed.contentType);
+    return reply.send(parsed.buffer);
+  });
 
   app.addHook('onRequest', authGuard);
 
@@ -387,6 +419,22 @@ export function createApp() {
       return reply.notFound('Recipe not found');
     }
     return reply.send({ recipe });
+  });
+
+  // On-demand fetch for a single past version's full ingredients/steps --
+  // the recipe's own `versions` array only carries summaries now (see the
+  // comment on assembleStoredRecipe), so browsing to an older version pill
+  // calls this instead of that content already having been sent eagerly.
+  app.get('/v1/recipes/:id/versions/:versionId', async (request, reply) => {
+    const params = z.object({ id: z.string().uuid(), versionId: z.string().uuid() }).safeParse(request.params);
+    if (!params.success) {
+      return sendValidationError(reply, params.error.flatten());
+    }
+    const version = await getVersionContent(params.data.id, request.auth.userId, params.data.versionId);
+    if (!version) {
+      return reply.notFound('Version not found');
+    }
+    return reply.send({ version });
   });
 
   app.post('/v1/recipes', async (request, reply) => {

@@ -5,6 +5,7 @@ import type {
   Recipe,
   RecipeStep,
   RecipeSummary,
+  RecipeVersion,
   StoredRecipe,
   UserPreferences,
   UserPreferencesV2,
@@ -237,6 +238,15 @@ export async function getCookbookCuisinesViaBackend(): Promise<string[]> {
 export async function getRecipeViaBackend(recipeId: string): Promise<StoredRecipe> {
   const data = await backendFetch<{ recipe: StoredRecipe }>(`/v1/recipes/${recipeId}`);
   return data.recipe;
+}
+
+// Fetches one past version's full ingredients/steps on demand -- the
+// recipe's own `versions` list is summary-only (see RecipeVersionSummary),
+// so browsing to an older version pill needs this instead of already
+// having that content in hand.
+export async function getRecipeVersionViaBackend(recipeId: string, versionId: string): Promise<RecipeVersion> {
+  const data = await backendFetch<{ version: RecipeVersion }>(`/v1/recipes/${recipeId}/versions/${versionId}`);
+  return data.version;
 }
 
 export interface CreateRecipePayload {

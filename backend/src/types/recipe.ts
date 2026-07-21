@@ -51,6 +51,16 @@ export const recipeVersionSchema = z.object({
   created_at: z.string().nullable().optional(),
 });
 
+// Everything about a version except its actual content. Used for the
+// `versions` list on a recipe -- previously that array held full
+// recipeVersionSchema entries (ingredients + steps) for every past version,
+// which meant a recipe you'd iterated on a few times shipped several
+// versions' worth of ingredients/steps on every single load, even though
+// the UI only shows one version's content at a time. The full content for
+// whichever version is actually being viewed is fetched on demand instead
+// (GET /v1/recipes/:id/versions/:versionId) -- see getVersionContent.
+export const recipeVersionSummarySchema = recipeVersionSchema.omit({ ingredients: true, steps: true });
+
 export const recipeLinkSchema = z.object({
   url: z.string().url(),
   platform: z.enum(['tiktok', 'instagram', 'youtube', 'other']),
@@ -67,13 +77,12 @@ export const storedRecipeSchema = z.object({
   dietary_tags: z.array(z.string()),
   allergen_warnings: z.array(z.string()),
   links: z.array(recipeLinkSchema),
-  // Plain string rather than z.string().url() -- this is usually a data:
-  // URL (base64-encoded photo the user picked from their library), which
-  // can be a few hundred KB of text and doesn't need URL-shape validation.
+  // A URL to GET /v1/recipes/:id/photo (or null), not the raw image data --
+  // see buildPhotoUrl in services/recipes.ts for why.
   image_url: z.string().nullable(),
   is_favorite: z.boolean(),
   current_version: recipeVersionSchema,
-  versions: z.array(recipeVersionSchema),
+  versions: z.array(recipeVersionSummarySchema),
 });
 
 export const createRecipeSchema = z.object({
@@ -163,6 +172,7 @@ export const duplicateCandidateSchema = z.object({
 
 export type StoredRecipe = z.infer<typeof storedRecipeSchema>;
 export type RecipeVersion = z.infer<typeof recipeVersionSchema>;
+export type RecipeVersionSummary = z.infer<typeof recipeVersionSummarySchema>;
 export type ExtractedRecipe = z.infer<typeof extractedRecipeSchema>;
 
 export const recipeSummarySchema = z.object({

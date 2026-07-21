@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
@@ -18,6 +18,7 @@ import { StepsList } from '../components/StepsList';
 import {
   deleteRecipeVersionViaBackend,
   deleteRecipeViaBackend,
+  getRecipeVersionViaBackend,
   getRecipeViaBackend,
   setCurrentVersionViaBackend,
   setFavoriteViaBackend,
@@ -30,7 +31,7 @@ import { spacing } from '../theme/spacing';
 import { typography } from '../theme/typography';
 import { fontFamily } from '../theme/fonts';
 import { elevation } from '../theme/elevation';
-import type { RecipeVersion, StoredRecipe } from '../types';
+import type { RecipeVersion, RecipeVersionSummary, StoredRecipe } from '../types';
 import type { RootStackParamList } from '../types/navigation';
 
 type Route = RouteProp<RootStackParamList, 'RecipeDetail'>;
@@ -52,14 +53,23 @@ export function RecipeDetailScreen() {
   const [photoUploading, setPhotoUploading] = useState(false);
   const [deleteRecipeSheetOpen, setDeleteRecipeSheetOpen] = useState(false);
   const [isDeletingRecipe, setIsDeletingRecipe] = useState(false);
-  const [versionPendingDelete, setVersionPendingDelete] = useState<RecipeVersion | null>(null);
+  const [versionPendingDelete, setVersionPendingDelete] = useState<RecipeVersionSummary | null>(null);
   const [isDeletingVersion, setIsDeletingVersion] = useState(false);
+  // recipe.versions only carries summaries (id/version_number/change_note) --
+  // this caches full ingredients/steps per version id, fetched on demand the
+  // first time a version pill other than the current one is tapped, so
+  // switching back to a version you've already viewed this session is
+  // instant instead of re-fetching.
+  const [versionContent, setVersionContent] = useState<Record<string, RecipeVersion>>({});
 
   const load = useCallback(async () => {
     const loaded = await getRecipeViaBackend(recipeId);
     setRecipe(loaded);
     const idx = loaded.versions.findIndex((v) => v.id === loaded.current_version.id);
     setActiveVersionIndex(idx >= 0 ? idx : loaded.versions.length - 1);
+    if (loaded.current_version.id) {
+      setVersionContent((prev) => ({ ...prev, [loaded.current_version.id!]: loaded.current_version }));
+    }
   }, [recipeId]);
 
   // Reload every time this screen comes into focus, not just on first mount
@@ -72,11 +82,21 @@ export function RecipeDetailScreen() {
   );
 
   if (!recipe) {
-    return <View style={styles.screen} />;
+    // A blank screen here reads as "the app is stuck" during the network
+    // round trip -- a spinner at least confirms something's happening.
+    return (
+      <View style={[styles.screen, styles.loadingScreen]}>
+        <ActivityIndicator color={colors.accent} />
+      </View>
+    );
   }
 
-  const activeVersion = recipe.versions[activeVersionIndex] ?? recipe.current_version;
-  const isViewingDefault = activeVersion.id === recipe.current_version.id;
+  // Summary (id/version_number/change_note) is always available immediately
+  // from recipe.versions. The full ingredients/steps for whichever version
+  // that is may still be loading -- see activeVersionContent below.
+  const activeVersionSummary = recipe.versions[activeVersionIndex] ?? recipe.current_version;
+  const activeVersionContent = activeVersionSummary.id ? versionContent[activeVersionSummary.id] : recipe.current_version;
+  const isViewingDefault = activeVersionSummary.id === recipe.current_version.id;
 
   // Tapping a version pill only changes what's previewed on screen -- it no
   // longer writes to the backend immediately. Making a version the recipe's
@@ -85,15 +105,23 @@ export function RecipeDetailScreen() {
   // browsing your version history can't accidentally change what's default.
   const handleSelectVersion = (index: number) => {
     setActiveVersionIndex(index);
+    const summary = recipe.versions[index];
+    if (!summary?.id || versionContent[summary.id]) return;
+    getRecipeVersionViaBackend(recipe.id, summary.id)
+      .then((full) => setVersionContent((prev) => ({ ...prev, [summary.id!]: full })))
+      .catch((err) => {
+        console.error('Failed to load version:', err);
+        Alert.alert('Something went wrong', "That version couldn't be loaded. Please try again.");
+      });
   };
 
   const handleSetDefaultVersion = async () => {
-    if (!activeVersion.id) return;
-    const updated = await setCurrentVersionViaBackend(recipe.id, activeVersion.id);
+    if (!activeVersionSummary.id) return;
+    const updated = await setCurrentVersionViaBackend(recipe.id, activeVersionSummary.id);
     setRecipe(updated);
   };
 
-  const handleDeleteVersion = (version: RecipeVersion) => {
+  const handleDeleteVersion = (version: RecipeVersionSummary) => {
     if (!version.id) return;
     if (recipe.versions.length <= 1) {
       Alert.alert(
@@ -120,6 +148,9 @@ export function RecipeDetailScreen() {
       }
       const updated = result.recipe;
       setRecipe(updated);
+      if (updated.current_version.id) {
+        setVersionContent((prev) => ({ ...prev, [updated.current_version.id!]: updated.current_version }));
+      }
       const idx = updated.versions.findIndex((v) => v.id === updated.current_version.id);
       setActiveVersionIndex(idx >= 0 ? idx : 0);
     } catch (err) {
@@ -314,16 +345,16 @@ export function RecipeDetailScreen() {
             {!isViewingDefault ? (
               <PressableScale onPress={handleSetDefaultVersion} style={styles.setDefaultBanner}>
                 <Text style={styles.setDefaultBannerText}>
-                  Set v{activeVersion.version_number} as the default version
+                  Set v{activeVersionSummary.version_number} as the default version
                 </Text>
               </PressableScale>
             ) : null}
           </View>
         ) : null}
 
-        {activeVersion.change_note ? (
+        {activeVersionSummary.change_note ? (
           <View style={styles.changeNoteBox}>
-            <Text style={styles.changeNoteText}>{activeVersion.change_note}</Text>
+            <Text style={styles.changeNoteText}>{activeVersionSummary.change_note}</Text>
           </View>
         ) : null}
 
@@ -355,21 +386,31 @@ export function RecipeDetailScreen() {
           </View>
         </View>
 
-        <View style={styles.sectionHeaderRow}>
-          <Text style={styles.sectionKicker}>Ingredients</Text>
-          <Text style={styles.sectionCount}>{activeVersion.ingredients.length}</Text>
-        </View>
-        <View style={styles.sectionCard}>
-          <IngredientsList ingredients={activeVersion.ingredients} />
-        </View>
+        {activeVersionContent ? (
+          <>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionKicker}>Ingredients</Text>
+              <Text style={styles.sectionCount}>{activeVersionContent.ingredients.length}</Text>
+            </View>
+            <View style={styles.sectionCard}>
+              <IngredientsList ingredients={activeVersionContent.ingredients} />
+            </View>
 
-        <View style={styles.sectionHeaderRow}>
-          <Text style={styles.sectionKicker}>Steps</Text>
-          <Text style={styles.sectionCount}>{activeVersion.steps.length}</Text>
-        </View>
-        <View style={styles.sectionCard}>
-          <StepsList steps={activeVersion.steps} />
-        </View>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionKicker}>Steps</Text>
+              <Text style={styles.sectionCount}>{activeVersionContent.steps.length}</Text>
+            </View>
+            <View style={styles.sectionCard}>
+              <StepsList steps={activeVersionContent.steps} />
+            </View>
+          </>
+        ) : (
+          // Only reachable while a version other than the current one (which
+          // always arrives with the initial load) is still being fetched.
+          <View style={styles.versionLoadingWrap}>
+            <ActivityIndicator color={colors.accent} />
+          </View>
+        )}
 
         <PressableScale onPress={() => setDeleteRecipeSheetOpen(true)} style={styles.deleteRecipeRow}>
           <Text style={styles.deleteRecipeText}>Delete recipe</Text>
@@ -464,6 +505,14 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: colors.canvas,
+  },
+  loadingScreen: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  versionLoadingWrap: {
+    paddingVertical: 40,
+    alignItems: 'center',
   },
   content: {
     padding: spacing.screenPadding,

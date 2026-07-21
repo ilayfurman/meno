@@ -1,8 +1,25 @@
 import { and, asc, desc, eq, ilike, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { cookbookItems, recipeVersions, recipes } from '../db/schema.js';
-import type { RecipeVersion, StoredRecipe } from '../types/recipe.js';
+import type { RecipeVersion, RecipeVersionSummary, StoredRecipe } from '../types/recipe.js';
 import { detectVideoPlatform } from '../utils/videoPlatform.js';
+import { env } from '../config/env.js';
+
+// The recipe/cookbook JSON used to embed the photo directly as a base64
+// data: URL -- simple, but it meant every list/detail fetch transferred the
+// full image bytes (often the single biggest part of the response) even
+// when nothing about the photo had changed since the last time. Handing
+// back a URL to a dedicated endpoint instead means: the JSON payload stays
+// small and fast regardless of photo size, and React Native's <Image> can
+// cache the photo itself by URL so it's only ever downloaded once. The `v=`
+// query param is a cache-buster tied to the recipe's updatedAt -- it changes
+// whenever the recipe (including just the photo) is edited, so a stale
+// cached image never lingers, while an unchanged photo can be cached
+// indefinitely.
+function buildPhotoUrl(recipeId: string, imageUrl: string | null, updatedAt: Date): string | null {
+  if (!imageUrl) return null;
+  return `${env.PUBLIC_BASE_URL}/v1/recipes/${recipeId}/photo?v=${updatedAt.getTime()}`;
+}
 
 type RecipeRow = typeof recipes.$inferSelect;
 type VersionRow = typeof recipeVersions.$inferSelect;
@@ -13,6 +30,15 @@ function rowToVersion(row: VersionRow): RecipeVersion {
     version_number: row.versionNumber,
     ingredients: row.ingredients as RecipeVersion['ingredients'],
     steps: row.steps as RecipeVersion['steps'],
+    change_note: row.changeNote,
+    created_at: row.createdAt.toISOString(),
+  };
+}
+
+function rowToVersionSummary(row: VersionRow): RecipeVersionSummary {
+  return {
+    id: row.id,
+    version_number: row.versionNumber,
     change_note: row.changeNote,
     created_at: row.createdAt.toISOString(),
   };
@@ -54,12 +80,21 @@ async function assembleStoredRecipe(
   ]);
   isFavorite = resolvedIsFavorite;
 
-  const versions = versionRows.map(rowToVersion);
-  const current = versions.find((v) => v.id === recipeRow.currentVersionId) ?? versions[versions.length - 1];
+  // Full ingredients/steps are only needed for whichever version is actually
+  // "current" -- the `versions` list below is summary-only (see
+  // recipeVersionSummarySchema) precisely so a recipe with several past
+  // iterations doesn't ship all of their content on every load. Any other
+  // version's full content is fetched on demand via getVersionContent when
+  // the user actually taps into it.
+  const current =
+    versionRows.map(rowToVersion).find((v) => v.id === recipeRow.currentVersionId) ??
+    (versionRows.length > 0 ? rowToVersion(versionRows[versionRows.length - 1]!) : undefined);
 
   if (!current) {
     throw new Error(`Recipe ${recipeRow.id} has no versions`);
   }
+
+  const versions = versionRows.map(rowToVersionSummary);
 
   return {
     id: recipeRow.id,
@@ -72,7 +107,7 @@ async function assembleStoredRecipe(
     dietary_tags: recipeRow.dietaryTags as string[],
     allergen_warnings: recipeRow.allergenWarnings as string[],
     links: (recipeRow.links as StoredRecipe['links']) ?? [],
-    image_url: recipeRow.imageUrl,
+    image_url: buildPhotoUrl(recipeRow.id, recipeRow.imageUrl, recipeRow.updatedAt),
     is_favorite: isFavorite,
     current_version: current,
     versions,
@@ -432,6 +467,58 @@ export async function getRecipeByIdForUser(recipeId: string, userId: string): Pr
   return assembleStoredRecipe(recipeRow, isFavoritePromise);
 }
 
+// Backs GET /v1/recipes/:id/versions/:versionId -- the on-demand fetch for
+// a single past version's full ingredients/steps, now that the eager
+// `versions` list on a recipe only carries summaries (see the comment on
+// assembleStoredRecipe). Scoped to the requesting user the same way every
+// other per-recipe query in this file is.
+export async function getVersionContent(
+  recipeId: string,
+  userId: string,
+  versionId: string,
+): Promise<RecipeVersion | null> {
+  const [row] = await db
+    .select({ version: recipeVersions })
+    .from(recipeVersions)
+    .innerJoin(recipes, eq(recipeVersions.recipeId, recipes.id))
+    .where(
+      and(
+        eq(recipeVersions.id, versionId),
+        eq(recipeVersions.recipeId, recipeId),
+        or(isNull(recipes.ownerUserId), eq(recipes.ownerUserId, userId)),
+      ),
+    )
+    .limit(1);
+  if (!row) return null;
+  return rowToVersion(row.version);
+}
+
+// Backs the public GET /v1/recipes/:id/photo route -- deliberately NOT
+// scoped to a userId (unlike every other query in this file), since that
+// route is intentionally unauthenticated. Recipe photos are served by their
+// recipe's random UUID, the same way an unlisted link works: nothing lists
+// or guesses valid IDs, so this doesn't expose anything the JSON API
+// wouldn't already leak via the photo URL itself. Being unauthenticated is
+// what lets React Native's <Image> load and cache it directly, with no
+// custom auth header plumbing.
+export async function getRecipePhotoDataUrl(recipeId: string): Promise<string | null> {
+  const [row] = await db.select({ imageUrl: recipes.imageUrl }).from(recipes).where(eq(recipes.id, recipeId)).limit(1);
+  return row?.imageUrl ?? null;
+}
+
+const DATA_URL_PATTERN = /^data:([^;,]+);base64,(.+)$/s;
+
+// Splits a `data:image/jpeg;base64,...` string (the format photos are
+// stored/uploaded in throughout this app) into a real Buffer plus its MIME
+// type, so the photo route can send actual image bytes with the right
+// Content-Type instead of a base64 JSON string.
+export function parseDataUrl(dataUrl: string): { buffer: Buffer; contentType: string } | null {
+  const match = DATA_URL_PATTERN.exec(dataUrl);
+  if (!match) return null;
+  const [, contentType, base64] = match;
+  return { buffer: Buffer.from(base64!, 'base64'), contentType: contentType! };
+}
+
 export async function saveRecipeToCookbook(userId: string, recipeId: string): Promise<boolean> {
   const dup = await db
     .select({ id: cookbookItems.id })
@@ -524,6 +611,7 @@ export async function listCookbookPage(
       servings: recipes.servings,
       totalTimeMinutes: recipes.totalTimeMinutes,
       imageUrl: recipes.imageUrl,
+      updatedAt: recipes.updatedAt,
       currentVersionId: recipes.currentVersionId,
       isFavorite: cookbookItems.isFavorite,
     })
@@ -567,7 +655,7 @@ export async function listCookbookPage(
     cuisine: row.cuisine,
     servings: row.servings,
     total_time_minutes: row.totalTimeMinutes,
-    image_url: row.imageUrl,
+    image_url: buildPhotoUrl(row.id, row.imageUrl, row.updatedAt),
     is_favorite: row.isFavorite,
     version_count: versionCountByRecipeId.get(row.id) ?? 1,
     current_version_number: row.currentVersionId ? versionNumberByVersionId.get(row.currentVersionId) ?? 1 : 1,

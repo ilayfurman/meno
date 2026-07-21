@@ -41,6 +41,13 @@ const envSchema = z.object({
   MAX_AGENT_RECIPES: z.coerce.number().int().positive().default(8),
   MAX_IMPORT_RESPONSE_BYTES: z.coerce.number().int().positive().default(5_242_880),
   REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
+  // Used to build absolute, publicly-fetchable photo URLs (see the
+  // /v1/recipes/:id/photo route) -- recipe/cookbook responses hand these
+  // straight to the client's <Image> component, so they need to be full
+  // URLs, not paths. Render sets RENDER_EXTERNAL_URL automatically on every
+  // web service (https://<service>.onrender.com), so this only needs a
+  // manual value for local dev.
+  PUBLIC_BASE_URL: z.string().default(process.env.RENDER_EXTERNAL_URL ?? `http://localhost:${process.env.PORT ?? '4000'}`),
 });
 
 export const env = envSchema.parse(process.env);
