@@ -71,9 +71,14 @@ export function CookbookScreen() {
   const [sortBy, setSortBy] = useState<CookbookSortKey>('recent');
   const [sortSheetOpen, setSortSheetOpen] = useState(false);
   const [importSheetOpen, setImportSheetOpen] = useState(false);
-  // True until we've shown *something* -- so the empty state never flashes
-  // "No recipes match" while the very first fetch is still in flight.
-  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  // True whenever a top-level list fetch is in flight -- the very first
+  // load, or a fresh one triggered by changing search/filter/sort. Gates
+  // the grid to show a spinner instead of either a blank flash or the
+  // previous query's stale results sitting on screen looking "done" while
+  // a different result set is actually on the way (e.g. tapping Favorites
+  // used to leave the All results showing for a second before swapping,
+  // which read as "the tap didn't work" rather than "still loading").
+  const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
 
   useEffect(() => {
@@ -89,6 +94,7 @@ export function CookbookScreen() {
   // focused (e.g. typing in the search box), so there's no separate effect
   // needed to react to param changes.
   const loadCookbook = useCallback(async () => {
+    setIsLoading(true);
     try {
       const page = await getCookbookViaBackend({
         limit: PAGE_SIZE,
@@ -111,7 +117,7 @@ export function CookbookScreen() {
       // vanish) went unnoticed instead of showing up as a visible error.
       console.error('Failed to load cookbook:', err);
     } finally {
-      setIsInitialLoading(false);
+      setIsLoading(false);
     }
   }, [debouncedSearch, activeFilter, sortBy]);
 
@@ -136,7 +142,7 @@ export function CookbookScreen() {
   );
 
   const loadMore = useCallback(async () => {
-    if (isLoadingMore || !hasMore || isInitialLoading) return;
+    if (isLoadingMore || !hasMore || isLoading) return;
     setIsLoadingMore(true);
     try {
       const page = await getCookbookViaBackend({
@@ -158,7 +164,7 @@ export function CookbookScreen() {
     } finally {
       setIsLoadingMore(false);
     }
-  }, [offset, hasMore, isLoadingMore, isInitialLoading, debouncedSearch, activeFilter, sortBy]);
+  }, [offset, hasMore, isLoadingMore, isLoading, debouncedSearch, activeFilter, sortBy]);
 
   const handleToggleFavorite = async (recipe: CookbookListItem) => {
     const next = !recipe.is_favorite;
@@ -183,7 +189,7 @@ export function CookbookScreen() {
   return (
     <View style={styles.screen}>
       <FlatList
-        data={recipes}
+        data={isLoading ? [] : recipes}
         keyExtractor={(item) => item.id}
         numColumns={2}
         columnWrapperStyle={styles.gridRow}
@@ -249,7 +255,7 @@ export function CookbookScreen() {
           </View>
         )}
         ListEmptyComponent={
-          isInitialLoading ? (
+          isLoading ? (
             <View style={styles.loadingWrap}>
               <ActivityIndicator color={colors.accent} />
             </View>
