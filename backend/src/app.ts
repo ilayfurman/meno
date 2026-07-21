@@ -43,6 +43,7 @@ import {
   findDuplicateByTitle,
   getRecipeByIdForUser,
   getRecipePhotoDataUrl,
+  verifyPhotoUrlSignature,
   getVersionContent,
   parseDataUrl,
   getCookbookStats,
@@ -157,15 +158,22 @@ export function createApp() {
 
   app.get('/health', async () => ({ ok: true }));
 
-  // Registered before the authGuard hook below, so this route is
-  // intentionally public -- see the long comment on getRecipePhotoDataUrl
-  // for why. `v` is just a cache-busting token (the recipe's updatedAt);
-  // it's not checked against anything, it only exists so the URL changes
-  // whenever the photo does.
+  // Registered before the authGuard hook below, so this route is reachable
+  // with no Clerk session -- required for a plain <Image source={{uri}}> to
+  // load it. It's NOT unauthenticated, though: `sig` is an HMAC signature
+  // (see signPhotoUrl/verifyPhotoUrlSignature in services/recipes.ts) that
+  // only the server can produce, and only ever does so inside an
+  // authenticated response. A request without a valid signature for that
+  // exact id+v pair is rejected before ever touching the database.
   app.get('/v1/recipes/:id/photo', async (request, reply) => {
     const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
-    if (!params.success) {
+    const query = z.object({ v: z.string().min(1), sig: z.string().min(1) }).safeParse(request.query);
+    if (!params.success || !query.success) {
       return reply.code(404).send();
+    }
+    const version = Number(query.data.v);
+    if (!Number.isFinite(version) || !verifyPhotoUrlSignature(params.data.id, version, query.data.sig)) {
+      return reply.code(403).send();
     }
     const dataUrl = await getRecipePhotoDataUrl(params.data.id);
     if (!dataUrl) {

@@ -1,3 +1,4 @@
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import { and, asc, desc, eq, ilike, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { cookbookItems, recipeVersions, recipes } from '../db/schema.js';
@@ -16,9 +17,40 @@ import { env } from '../config/env.js';
 // whenever the recipe (including just the photo) is edited, so a stale
 // cached image never lingers, while an unchanged photo can be cached
 // indefinitely.
+//
+// That endpoint is registered before authGuard (see app.ts) -- it has to be
+// reachable with no Clerk session, since a plain <Image source={{uri}}>
+// can't attach a Bearer header. That's fine as long as the URL itself can't
+// be forged or guessed: `sig` is an HMAC over the recipe id + the `v`
+// cache-buster, signed with a server-only secret (PHOTO_URL_SECRET). Only
+// the server can produce a valid signature, and it only ever does so inside
+// an authenticated response (getRecipeByIdForUser, listCookbookPage, etc.),
+// so nobody can construct a working photo URL without first having gone
+// through an authenticated request for that recipe. This is the same
+// pattern as an S3/CDN presigned URL -- anonymous-but-unforgeable, not
+// "unauthenticated," and it's what turns "any UUID holder can fetch this
+// forever" into "only someone who legitimately received this exact URL
+// can."
+function signPhotoUrl(recipeId: string, version: number): string {
+  return createHmac('sha256', env.PHOTO_URL_SECRET).update(`${recipeId}:${version}`).digest('hex');
+}
+
+export function verifyPhotoUrlSignature(recipeId: string, version: number, signature: string): boolean {
+  const expected = signPhotoUrl(recipeId, version);
+  const expectedBuf = Buffer.from(expected, 'hex');
+  const providedBuf = Buffer.from(signature, 'hex');
+  // Constant-time comparison -- a naive === would let an attacker recover
+  // the correct signature one byte at a time by timing how long comparison
+  // takes to fail (a timing side-channel), the same reason password checks
+  // never use plain string equality either.
+  return expectedBuf.length === providedBuf.length && timingSafeEqual(expectedBuf, providedBuf);
+}
+
 function buildPhotoUrl(recipeId: string, imageUrl: string | null, updatedAt: Date): string | null {
   if (!imageUrl) return null;
-  return `${env.PUBLIC_BASE_URL}/v1/recipes/${recipeId}/photo?v=${updatedAt.getTime()}`;
+  const version = updatedAt.getTime();
+  const sig = signPhotoUrl(recipeId, version);
+  return `${env.PUBLIC_BASE_URL}/v1/recipes/${recipeId}/photo?v=${version}&sig=${sig}`;
 }
 
 type RecipeRow = typeof recipes.$inferSelect;

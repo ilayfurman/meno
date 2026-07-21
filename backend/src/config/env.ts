@@ -48,9 +48,34 @@ const envSchema = z.object({
   // web service (https://<service>.onrender.com), so this only needs a
   // manual value for local dev.
   PUBLIC_BASE_URL: z.string().default(process.env.RENDER_EXTERNAL_URL ?? `http://localhost:${process.env.PORT ?? '4000'}`),
+  // Signs the `sig` query param on photo URLs (see buildPhotoUrl in
+  // services/recipes.ts) so the photo route can stay reachable without a
+  // Clerk session -- required for a plain <Image> tag to load it with no
+  // custom headers -- while still not being open to anyone who happens to
+  // see or guess a recipe's UUID. A URL is only ever valid if it was
+  // actually signed by this secret, which only the server holds; nobody can
+  // construct one without going through an authenticated API response
+  // first. MUST be overridden with a real random value in production (e.g.
+  // `openssl rand -hex 32`) -- the default here is fine for local dev only,
+  // since anyone reading this source can forge signatures against it.
+  PHOTO_URL_SECRET: z.string().default('dev-only-insecure-photo-secret-change-in-production'),
 });
 
 export const env = envSchema.parse(process.env);
+
+// PHOTO_URL_SECRET has a default (unlike DATABASE_URL/GROQ_API_KEY/
+// CLERK_SECRET_KEY below, which are required with no default) so local dev
+// works with zero setup -- but that also means forgetting to set a real
+// value in production wouldn't fail loudly on its own the way a genuinely
+// required env var does. This closes that gap explicitly: refuse to boot in
+// production while still sitting on the publicly-known dev default, since
+// that would mean anyone can forge valid photo URLs against a real deploy.
+if (env.NODE_ENV === 'production' && env.PHOTO_URL_SECRET === 'dev-only-insecure-photo-secret-change-in-production') {
+  throw new Error(
+    'PHOTO_URL_SECRET is still set to its insecure default in production. Set a real random value ' +
+      '(e.g. `openssl rand -hex 32`) in the environment before starting the server.',
+  );
+}
 
 export const allowedImportDomains = env.ALLOWED_IMPORT_DOMAINS.split(',')
   .map((d) => d.trim().toLowerCase())
