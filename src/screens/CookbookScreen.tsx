@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Dimensions, FlatList, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -80,6 +80,11 @@ export function CookbookScreen() {
   // which read as "the tap didn't work" rather than "still loading").
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  // Remembers which search/filter/sort combo we last successfully loaded,
+  // so loadCookbook can tell "the user changed the query" apart from "the
+  // screen just regained focus with the same query" (e.g. coming back from
+  // a recipe). Only the former should show the spinner -- see loadCookbook.
+  const lastLoadedQueryKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     const handle = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 300);
@@ -93,8 +98,20 @@ export function CookbookScreen() {
   // event and immediately whenever this identity changes while already
   // focused (e.g. typing in the search box), so there's no separate effect
   // needed to react to param changes.
+  //
+  // Every focus (including just navigating back from a recipe) runs this
+  // too, since that's also how edits/favorites made on that screen show up
+  // here. The spinner should only appear when the query itself changed,
+  // though -- a plain refocus with the same search/filter/sort almost
+  // always returns the same data, so clearing the grid and flashing a
+  // spinner over it would just be a jarring, pointless flicker on the
+  // single most common navigation in the app (opening and closing a
+  // recipe). Comparing against the last query we actually loaded is what
+  // tells the two cases apart.
   const loadCookbook = useCallback(async () => {
-    setIsLoading(true);
+    const queryKey = JSON.stringify({ search: debouncedSearch, filter: activeFilter, sort: sortBy });
+    const showLoadingState = queryKey !== lastLoadedQueryKeyRef.current;
+    if (showLoadingState) setIsLoading(true);
     try {
       const page = await getCookbookViaBackend({
         limit: PAGE_SIZE,
@@ -106,6 +123,7 @@ export function CookbookScreen() {
       setRecipes(page.recipes);
       setOffset(page.recipes.length);
       setHasMore(page.hasMore);
+      lastLoadedQueryKeyRef.current = queryKey;
       // Warm the cache for just this page (not the whole cookbook -- see
       // prefetchRecipe) so tapping into any card already on screen loads
       // the detail screen instantly instead of waiting on a fresh fetch.
@@ -117,7 +135,7 @@ export function CookbookScreen() {
       // vanish) went unnoticed instead of showing up as a visible error.
       console.error('Failed to load cookbook:', err);
     } finally {
-      setIsLoading(false);
+      if (showLoadingState) setIsLoading(false);
     }
   }, [debouncedSearch, activeFilter, sortBy]);
 
