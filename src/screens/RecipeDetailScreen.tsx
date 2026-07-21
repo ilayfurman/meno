@@ -25,6 +25,7 @@ import {
   setRecipePhotoViaBackend,
   setRecipeLinksViaBackend,
 } from '../api/backend';
+import { getCachedRecipe, removeCachedRecipe, setCachedRecipe } from '../state/recipeCache';
 import { buildRecipeHtml } from '../utils/recipeExport';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
@@ -62,15 +63,43 @@ export function RecipeDetailScreen() {
   // instant instead of re-fetching.
   const [versionContent, setVersionContent] = useState<Record<string, RecipeVersion>>({});
 
-  const load = useCallback(async () => {
-    const loaded = await getRecipeViaBackend(recipeId);
+  // Shared by both the cache-hit and network-fetch paths below so version
+  // bookkeeping (which pill is active, seeding the content cache with the
+  // current version) stays in sync no matter where the data came from.
+  const applyRecipe = useCallback((loaded: StoredRecipe) => {
     setRecipe(loaded);
     const idx = loaded.versions.findIndex((v) => v.id === loaded.current_version.id);
     setActiveVersionIndex(idx >= 0 ? idx : loaded.versions.length - 1);
     if (loaded.current_version.id) {
       setVersionContent((prev) => ({ ...prev, [loaded.current_version.id!]: loaded.current_version }));
     }
-  }, [recipeId]);
+  }, []);
+
+  // Write-through: every mutation below (favorite, photo, links, versions)
+  // updates both local screen state and the shared cache in one call, so a
+  // trip back to the Cookbook and back into this recipe never shows stale
+  // data from before the edit.
+  const updateRecipe = useCallback((updated: StoredRecipe) => {
+    setCachedRecipe(updated);
+    applyRecipe(updated);
+  }, [applyRecipe]);
+
+  const load = useCallback(async () => {
+    // Render instantly from the cache if the Cookbook screen's background
+    // prefetch (or an earlier visit this session) already has this recipe,
+    // rather than showing a spinner while a fetch that's often unnecessary
+    // completes. Still follows up with a real fetch below either way, so a
+    // stale cached copy (edited elsewhere, or just old) gets corrected --
+    // this is "show what we have now, then quietly confirm it's current,"
+    // not a replacement for the network fetch.
+    const cached = getCachedRecipe(recipeId);
+    if (cached) {
+      applyRecipe(cached);
+    }
+    const loaded = await getRecipeViaBackend(recipeId);
+    setCachedRecipe(loaded);
+    applyRecipe(loaded);
+  }, [recipeId, applyRecipe]);
 
   // Reload every time this screen comes into focus, not just on first mount
   // -- otherwise coming back from Edit recipe (which saves a new version)
@@ -118,7 +147,7 @@ export function RecipeDetailScreen() {
   const handleSetDefaultVersion = async () => {
     if (!activeVersionSummary.id) return;
     const updated = await setCurrentVersionViaBackend(recipe.id, activeVersionSummary.id);
-    setRecipe(updated);
+    updateRecipe(updated);
   };
 
   const handleDeleteVersion = (version: RecipeVersionSummary) => {
@@ -143,16 +172,11 @@ export function RecipeDetailScreen() {
       const result = await deleteRecipeVersionViaBackend(recipe.id, versionPendingDelete.id);
       setVersionPendingDelete(null);
       if (result.deletedRecipe || !result.recipe) {
+        removeCachedRecipe(recipe.id);
         navigation.goBack();
         return;
       }
-      const updated = result.recipe;
-      setRecipe(updated);
-      if (updated.current_version.id) {
-        setVersionContent((prev) => ({ ...prev, [updated.current_version.id!]: updated.current_version }));
-      }
-      const idx = updated.versions.findIndex((v) => v.id === updated.current_version.id);
-      setActiveVersionIndex(idx >= 0 ? idx : 0);
+      updateRecipe(result.recipe);
     } catch (err) {
       console.error('Failed to delete version:', err);
       Alert.alert('Something went wrong', "That version couldn't be deleted. Please try again.");
@@ -184,6 +208,7 @@ export function RecipeDetailScreen() {
     setIsDeletingRecipe(true);
     try {
       await deleteRecipeViaBackend(recipe.id);
+      removeCachedRecipe(recipe.id);
       setDeleteRecipeSheetOpen(false);
       navigation.goBack();
     } catch (err) {
@@ -195,11 +220,11 @@ export function RecipeDetailScreen() {
 
   const handleToggleFavorite = async () => {
     const next = !recipe.is_favorite;
-    setRecipe({ ...recipe, is_favorite: next });
+    updateRecipe({ ...recipe, is_favorite: next });
     try {
       await setFavoriteViaBackend(recipe.id, next);
     } catch {
-      setRecipe({ ...recipe, is_favorite: !next });
+      updateRecipe({ ...recipe, is_favorite: !next });
     }
   };
 
@@ -227,7 +252,7 @@ export function RecipeDetailScreen() {
       nextLinks.push({ url });
     }
     const updated = await setRecipeLinksViaBackend(recipe.id, nextLinks);
-    setRecipe(updated);
+    updateRecipe(updated);
     setLinksEditOpen(false);
   };
 
@@ -235,7 +260,7 @@ export function RecipeDetailScreen() {
     if (linkEditIndex === null) return;
     const nextLinks = recipe.links.filter((_, index) => index !== linkEditIndex).map((link) => ({ url: link.url }));
     const updated = await setRecipeLinksViaBackend(recipe.id, nextLinks);
-    setRecipe(updated);
+    updateRecipe(updated);
     setLinksEditOpen(false);
   };
 
@@ -268,7 +293,7 @@ export function RecipeDetailScreen() {
     setPhotoUploading(true);
     try {
       const updated = await setRecipePhotoViaBackend(recipe.id, dataUrl);
-      setRecipe(updated);
+      updateRecipe(updated);
     } catch (err) {
       console.error('Failed to update recipe photo:', err);
       Alert.alert('Something went wrong', "That photo couldn't be saved. Please try again.");

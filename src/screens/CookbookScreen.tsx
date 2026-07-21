@@ -8,6 +8,7 @@ import { PressableScale } from '../components/PressableScale';
 import { BottomSheet } from '../components/BottomSheet';
 import { ImportRecipeSheet } from '../components/ImportRecipeSheet';
 import { getCookbookCuisinesViaBackend, getCookbookViaBackend, setFavoriteViaBackend } from '../api/backend';
+import { prefetchRecipe } from '../state/recipeCache';
 import { colors } from '../theme/colors';
 import { spacing } from '../theme/spacing';
 import { typography } from '../theme/typography';
@@ -99,6 +100,10 @@ export function CookbookScreen() {
       setRecipes(page.recipes);
       setOffset(page.recipes.length);
       setHasMore(page.hasMore);
+      // Warm the cache for just this page (not the whole cookbook -- see
+      // prefetchRecipe) so tapping into any card already on screen loads
+      // the detail screen instantly instead of waiting on a fresh fetch.
+      page.recipes.forEach((item) => prefetchRecipe(item.id));
     } catch (err) {
       // Leave prior state on load failure -- a toast/retry affordance can be
       // added later -- but at least log it. This used to fail completely
@@ -144,6 +149,7 @@ export function CookbookScreen() {
       setRecipes((prev) => [...prev, ...page.recipes]);
       setOffset((prev) => prev + page.recipes.length);
       setHasMore(page.hasMore);
+      page.recipes.forEach((item) => prefetchRecipe(item.id));
     } catch (err) {
       console.error('Failed to load more recipes:', err);
       // Stop auto-retrying against a broken connection -- the user can
