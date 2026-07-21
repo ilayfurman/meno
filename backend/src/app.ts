@@ -12,6 +12,7 @@ import { aiUsage, generationRequests, recipeEvents } from './db/schema.js';
 import {
   addRecipeVersionSchema,
   agentRequestSchema,
+  ALLOWED_PHOTO_MIME_TYPES,
   cookbookReorderSchema,
   createRecipeSchema,
   eventCreateSchema,
@@ -136,6 +137,23 @@ function sendValidationError(reply: { code: (status: number) => { send: (payload
   return reply.code(400).send({ error: 'Invalid request', details });
 }
 
+const versionsQuerySchema = z.object({ versions: z.enum(['summary', 'full']).optional() });
+
+// Every route below that can return a StoredRecipe defaults to the ORIGINAL
+// full-versions shape (every past version's ingredients/steps included)
+// unless the caller explicitly opts into the smaller one via
+// `?versions=summary`. That default is what lets the app build that's
+// already on a user's device -- which has no idea this query param exists,
+// and reads `versions[i].ingredients` directly with no on-demand fallback --
+// keep working completely unmodified after this backend deploys, no matter
+// how long it takes them to update. Only a client that's been rebuilt
+// against this change (and therefore knows to fetch missing version content
+// via GET /v1/recipes/:id/versions/:versionId) should ever pass `summary`.
+function wantsLeanVersions(query: unknown): boolean {
+  const parsed = versionsQuerySchema.safeParse(query);
+  return parsed.success && parsed.data.versions === 'summary';
+}
+
 export function createApp() {
   // Default bodyLimit (1MB) is too small for a base64-encoded recipe photo
   // JSON payload -- bump it so the photo-upload route (image_url as a data:
@@ -175,15 +193,30 @@ export function createApp() {
     if (!Number.isFinite(version) || !verifyPhotoUrlSignature(params.data.id, version, query.data.sig)) {
       return reply.code(403).send();
     }
-    const dataUrl = await getRecipePhotoDataUrl(params.data.id);
-    if (!dataUrl) {
+    const photo = await getRecipePhotoDataUrl(params.data.id);
+    if (!photo) {
       return reply.code(404).send();
     }
-    const parsed = parseDataUrl(dataUrl);
-    if (!parsed) {
+    // The signature alone only proves this id+v pair was legitimately
+    // issued at some point -- it doesn't prove `v` still matches what's
+    // actually stored now. Rejecting a mismatch here is what makes
+    // replacing/removing a photo actually revoke any previously-issued URL
+    // for it, instead of that old URL just quietly starting to resolve to
+    // whatever photo happens to be current.
+    if (photo.updatedAt.getTime() !== version) {
+      return reply.code(403).send();
+    }
+    const parsed = parseDataUrl(photo.dataUrl);
+    if (!parsed || !ALLOWED_PHOTO_MIME_TYPES.includes(parsed.contentType as (typeof ALLOWED_PHOTO_MIME_TYPES)[number])) {
       return reply.code(404).send();
     }
     reply.header('Cache-Control', 'private, max-age=31536000, immutable');
+    // Defense-in-depth alongside the write-time allowlist in
+    // updateRecipePhotoSchema -- if a non-image data: URL ever ends up
+    // stored anyway (e.g. a row written before this check existed), this
+    // stops a browser from sniffing the body and rendering it as HTML/SVG
+    // regardless of the Content-Type we send.
+    reply.header('X-Content-Type-Options', 'nosniff');
     reply.type(parsed.contentType);
     return reply.send(parsed.buffer);
   });
@@ -422,7 +455,7 @@ export function createApp() {
     if (!params.success) {
       return sendValidationError(reply, params.error.flatten());
     }
-    const recipe = await getRecipeByIdForUser(params.data.id, request.auth.userId);
+    const recipe = await getRecipeByIdForUser(params.data.id, request.auth.userId, wantsLeanVersions(request.query));
     if (!recipe) {
       return reply.notFound('Recipe not found');
     }
@@ -450,7 +483,7 @@ export function createApp() {
     if (!parsed.success) {
       return sendValidationError(reply, parsed.error.flatten());
     }
-    const recipe = await createRecipeForUser(request.auth.userId, parsed.data);
+    const recipe = await createRecipeForUser(request.auth.userId, parsed.data, wantsLeanVersions(request.query));
     await saveRecipeToCookbook(request.auth.userId, recipe.id);
     return reply.send({ recipe });
   });
@@ -461,7 +494,7 @@ export function createApp() {
     if (!params.success) return sendValidationError(reply, params.error.flatten());
     if (!body.success) return sendValidationError(reply, body.error.flatten());
 
-    const recipe = await addRecipeVersion(params.data.id, request.auth.userId, body.data);
+    const recipe = await addRecipeVersion(params.data.id, request.auth.userId, body.data, wantsLeanVersions(request.query));
     if (!recipe) return reply.notFound('Recipe not found');
     return reply.send({ recipe });
   });
@@ -472,7 +505,13 @@ export function createApp() {
     if (!params.success) return sendValidationError(reply, params.error.flatten());
     if (!body.success) return sendValidationError(reply, body.error.flatten());
 
-    const recipe = await updateRecipeVersion(params.data.id, request.auth.userId, params.data.versionId, body.data);
+    const recipe = await updateRecipeVersion(
+      params.data.id,
+      request.auth.userId,
+      params.data.versionId,
+      body.data,
+      wantsLeanVersions(request.query),
+    );
     if (!recipe) return reply.notFound('Recipe or version not found');
     return reply.send({ recipe });
   });
@@ -483,7 +522,12 @@ export function createApp() {
     if (!params.success) return sendValidationError(reply, params.error.flatten());
     if (!body.success) return sendValidationError(reply, body.error.flatten());
 
-    const recipe = await setCurrentVersion(params.data.id, request.auth.userId, body.data.version_id);
+    const recipe = await setCurrentVersion(
+      params.data.id,
+      request.auth.userId,
+      body.data.version_id,
+      wantsLeanVersions(request.query),
+    );
     if (!recipe) return reply.notFound('Recipe or version not found');
     return reply.send({ recipe });
   });
@@ -492,7 +536,12 @@ export function createApp() {
     const params = z.object({ id: z.string().uuid(), versionId: z.string().uuid() }).safeParse(request.params);
     if (!params.success) return sendValidationError(reply, params.error.flatten());
 
-    const result = await deleteRecipeVersion(params.data.id, request.auth.userId, params.data.versionId);
+    const result = await deleteRecipeVersion(
+      params.data.id,
+      request.auth.userId,
+      params.data.versionId,
+      wantsLeanVersions(request.query),
+    );
     if (!result.deletedRecipe && !result.recipe) {
       return reply.notFound('Recipe not found');
     }
@@ -514,7 +563,7 @@ export function createApp() {
     if (!params.success) return sendValidationError(reply, params.error.flatten());
     if (!body.success) return sendValidationError(reply, body.error.flatten());
 
-    const recipe = await setRecipeLinks(params.data.id, request.auth.userId, body.data.links);
+    const recipe = await setRecipeLinks(params.data.id, request.auth.userId, body.data.links, wantsLeanVersions(request.query));
     if (!recipe) return reply.notFound('Recipe not found');
     return reply.send({ recipe });
   });
@@ -525,7 +574,7 @@ export function createApp() {
     if (!params.success) return sendValidationError(reply, params.error.flatten());
     if (!body.success) return sendValidationError(reply, body.error.flatten());
 
-    const recipe = await setRecipePhoto(params.data.id, request.auth.userId, body.data.image_url);
+    const recipe = await setRecipePhoto(params.data.id, request.auth.userId, body.data.image_url, wantsLeanVersions(request.query));
     if (!recipe) return reply.notFound('Recipe not found');
     return reply.send({ recipe });
   });
@@ -677,7 +726,7 @@ export function createApp() {
           return { duplicate, candidate };
         }
       }
-      const recipe = await createRecipeForUser(request.auth.userId, candidate);
+      const recipe = await createRecipeForUser(request.auth.userId, candidate, wantsLeanVersions(request.query));
       await saveRecipeToCookbook(request.auth.userId, recipe.id);
       return { recipe };
     }
@@ -716,7 +765,7 @@ export function createApp() {
         return { duplicate, candidate };
       }
     }
-    const recipe = await createRecipeForUser(request.auth.userId, candidate);
+    const recipe = await createRecipeForUser(request.auth.userId, candidate, wantsLeanVersions(request.query));
     await saveRecipeToCookbook(request.auth.userId, recipe.id);
 
     return { recipe };
@@ -752,7 +801,7 @@ export function createApp() {
       }
     }
 
-    const recipe = await createRecipeForUser(request.auth.userId, candidate);
+    const recipe = await createRecipeForUser(request.auth.userId, candidate, wantsLeanVersions(request.query));
     await saveRecipeToCookbook(request.auth.userId, recipe.id);
     return { recipe };
   });
@@ -810,7 +859,7 @@ export function createApp() {
       }
     }
 
-    const recipe = await createRecipeForUser(request.auth.userId, candidate);
+    const recipe = await createRecipeForUser(request.auth.userId, candidate, wantsLeanVersions(request.query));
     await saveRecipeToCookbook(request.auth.userId, recipe.id);
 
     return { recipe };
@@ -855,7 +904,7 @@ export function createApp() {
       }
     }
 
-    const recipe = await createRecipeForUser(request.auth.userId, candidate);
+    const recipe = await createRecipeForUser(request.auth.userId, candidate, wantsLeanVersions(request.query));
     await saveRecipeToCookbook(request.auth.userId, recipe.id);
 
     return { recipe };

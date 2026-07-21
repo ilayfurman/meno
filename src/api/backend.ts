@@ -235,8 +235,18 @@ export async function getCookbookCuisinesViaBackend(): Promise<string[]> {
   return data.cuisines;
 }
 
+// `?versions=summary` opts into the lean recipe shape (versions carry
+// id/version_number/change_note only, not ingredients/steps) -- this app
+// always fetches a past version's full content on demand via
+// getRecipeVersionViaBackend instead, so it never needs the fatter default.
+// The backend defaults to the old full-versions shape for any caller that
+// DOESN'T pass this, which is what protects an older build of this same app
+// (one from before this flag existed) from breaking against a newer
+// backend -- see wantsLeanVersions in the backend's app.ts.
+const LEAN_VERSIONS_QUERY = 'versions=summary';
+
 export async function getRecipeViaBackend(recipeId: string): Promise<StoredRecipe> {
-  const data = await backendFetch<{ recipe: StoredRecipe }>(`/v1/recipes/${recipeId}`);
+  const data = await backendFetch<{ recipe: StoredRecipe }>(`/v1/recipes/${recipeId}?${LEAN_VERSIONS_QUERY}`);
   return data.recipe;
 }
 
@@ -267,7 +277,10 @@ export interface CreateRecipePayload {
 }
 
 export async function createRecipeViaBackend(payload: CreateRecipePayload): Promise<StoredRecipe> {
-  const data = await backendFetch<{ recipe: StoredRecipe }>('/v1/recipes', { method: 'POST', body: payload });
+  const data = await backendFetch<{ recipe: StoredRecipe }>(`/v1/recipes?${LEAN_VERSIONS_QUERY}`, {
+    method: 'POST',
+    body: payload,
+  });
   return data.recipe;
 }
 
@@ -296,7 +309,7 @@ function toImportOutcome(data: { recipe?: StoredRecipe; duplicate?: DuplicateCan
 
 export async function importRecipeFromUrlViaBackend(url: string, force = false): Promise<ImportOutcome> {
   const data = await backendFetch<{ recipe?: StoredRecipe; duplicate?: DuplicateCandidate; candidate?: CreateRecipePayload }>(
-    '/v1/recipes/import-url',
+    `/v1/recipes/import-url?${LEAN_VERSIONS_QUERY}`,
     { method: 'POST', body: { url, force } },
   );
   return toImportOutcome(data);
@@ -304,7 +317,7 @@ export async function importRecipeFromUrlViaBackend(url: string, force = false):
 
 export async function importRecipeFromTextViaBackend(text: string, force = false): Promise<ImportOutcome> {
   const data = await backendFetch<{ recipe?: StoredRecipe; duplicate?: DuplicateCandidate; candidate?: CreateRecipePayload }>(
-    '/v1/recipes/import-text',
+    `/v1/recipes/import-text?${LEAN_VERSIONS_QUERY}`,
     { method: 'POST', body: { text, force } },
   );
   return toImportOutcome(data);
@@ -312,7 +325,7 @@ export async function importRecipeFromTextViaBackend(text: string, force = false
 
 export async function importRecipeFromImageViaBackend(dataUrl: string, force = false): Promise<ImportOutcome> {
   const data = await backendFetch<{ recipe?: StoredRecipe; duplicate?: DuplicateCandidate; candidate?: CreateRecipePayload }>(
-    '/v1/recipes/import-image',
+    `/v1/recipes/import-image?${LEAN_VERSIONS_QUERY}`,
     { method: 'POST', body: { image: dataUrl, force } },
   );
   return toImportOutcome(data);
@@ -330,7 +343,7 @@ export async function importRecipeFromPdfViaBackend(
   } as unknown as Blob);
   form.append('force', force ? 'true' : 'false');
   const data = await backendFetch<{ recipe?: StoredRecipe; duplicate?: DuplicateCandidate; candidate?: CreateRecipePayload }>(
-    '/v1/recipes/import-pdf',
+    `/v1/recipes/import-pdf?${LEAN_VERSIONS_QUERY}`,
     { method: 'POST', body: form },
   );
   return toImportOutcome(data);
@@ -340,7 +353,7 @@ export async function addRecipeVersionViaBackend(
   recipeId: string,
   payload: { ingredients: Ingredient[]; steps: RecipeStep[]; change_note?: string | null; set_as_current: boolean },
 ): Promise<StoredRecipe> {
-  const data = await backendFetch<{ recipe: StoredRecipe }>(`/v1/recipes/${recipeId}/versions`, {
+  const data = await backendFetch<{ recipe: StoredRecipe }>(`/v1/recipes/${recipeId}/versions?${LEAN_VERSIONS_QUERY}`, {
     method: 'POST',
     body: payload,
   });
@@ -352,15 +365,15 @@ export async function updateRecipeVersionViaBackend(
   versionId: string,
   payload: { ingredients: Ingredient[]; steps: RecipeStep[]; change_note?: string | null },
 ): Promise<StoredRecipe> {
-  const data = await backendFetch<{ recipe: StoredRecipe }>(`/v1/recipes/${recipeId}/versions/${versionId}`, {
-    method: 'PATCH',
-    body: payload,
-  });
+  const data = await backendFetch<{ recipe: StoredRecipe }>(
+    `/v1/recipes/${recipeId}/versions/${versionId}?${LEAN_VERSIONS_QUERY}`,
+    { method: 'PATCH', body: payload },
+  );
   return data.recipe;
 }
 
 export async function setCurrentVersionViaBackend(recipeId: string, versionId: string): Promise<StoredRecipe> {
-  const data = await backendFetch<{ recipe: StoredRecipe }>(`/v1/recipes/${recipeId}/current-version`, {
+  const data = await backendFetch<{ recipe: StoredRecipe }>(`/v1/recipes/${recipeId}/current-version?${LEAN_VERSIONS_QUERY}`, {
     method: 'PATCH',
     body: { version_id: versionId },
   });
@@ -371,7 +384,7 @@ export async function deleteRecipeVersionViaBackend(
   recipeId: string,
   versionId: string,
 ): Promise<{ deletedRecipe: boolean; recipe: StoredRecipe | null }> {
-  return backendFetch(`/v1/recipes/${recipeId}/versions/${versionId}`, { method: 'DELETE' });
+  return backendFetch(`/v1/recipes/${recipeId}/versions/${versionId}?${LEAN_VERSIONS_QUERY}`, { method: 'DELETE' });
 }
 
 export async function deleteRecipeViaBackend(recipeId: string): Promise<void> {
@@ -382,7 +395,7 @@ export async function deleteRecipeViaBackend(recipeId: string): Promise<void> {
 // whatever add/edit/remove just happened in the UI), same as the backend
 // route expects.
 export async function setRecipeLinksViaBackend(recipeId: string, links: { url: string }[]): Promise<StoredRecipe> {
-  const data = await backendFetch<{ recipe: StoredRecipe }>(`/v1/recipes/${recipeId}/links`, {
+  const data = await backendFetch<{ recipe: StoredRecipe }>(`/v1/recipes/${recipeId}/links?${LEAN_VERSIONS_QUERY}`, {
     method: 'PUT',
     body: { links },
   });
@@ -390,7 +403,7 @@ export async function setRecipeLinksViaBackend(recipeId: string, links: { url: s
 }
 
 export async function setRecipePhotoViaBackend(recipeId: string, imageUrl: string | null): Promise<StoredRecipe> {
-  const data = await backendFetch<{ recipe: StoredRecipe }>(`/v1/recipes/${recipeId}/photo`, {
+  const data = await backendFetch<{ recipe: StoredRecipe }>(`/v1/recipes/${recipeId}/photo?${LEAN_VERSIONS_QUERY}`, {
     method: 'PUT',
     body: { image_url: imageUrl },
   });

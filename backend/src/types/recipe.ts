@@ -125,9 +125,27 @@ export const updateRecipeLinksSchema = z.object({
   links: z.array(z.object({ url: z.string().url() })),
 });
 
+// Recipe photos are served back out through GET /v1/recipes/:id/photo with
+// whatever MIME type was embedded in this data: URL reflected verbatim into
+// the response's Content-Type (see parseDataUrl in services/recipes.ts) --
+// without this allowlist, a client (or anyone hitting the API directly,
+// bypassing the picker) could store `data:text/html;base64,...` and turn
+// that route into one that serves attacker-controlled HTML/SVG from our own
+// origin. Restricting to real image types at write time closes that off at
+// the source, on top of the nosniff header the serve route also sets.
+const ALLOWED_PHOTO_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'] as const;
+
 export const updateRecipePhotoSchema = z.object({
-  image_url: z.string().nullable(),
+  image_url: z
+    .string()
+    .nullable()
+    .refine(
+      (value) => value === null || ALLOWED_PHOTO_MIME_TYPES.some((type) => value.startsWith(`data:${type};base64,`)),
+      { message: 'image_url must be a base64 data: URL of an allowed image type (jpeg, png, webp, heic, or heif).' },
+    ),
 });
+
+export { ALLOWED_PHOTO_MIME_TYPES };
 
 export const extractedRecipeSchema = z.object({
   // The model's own honest signal that the source (page text or image) it

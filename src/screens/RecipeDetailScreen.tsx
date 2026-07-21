@@ -78,11 +78,30 @@ export function RecipeDetailScreen() {
   // Write-through: every mutation below (favorite, photo, links, versions)
   // updates both local screen state and the shared cache in one call, so a
   // trip back to the Cookbook and back into this recipe never shows stale
-  // data from before the edit.
+  // data from before the edit. Deliberately does NOT reuse applyRecipe --
+  // that always jumps to the recipe's default version, which is correct for
+  // a fresh screen load but wrong here: a metadata-only edit (favorite,
+  // photo, links) made while browsing an older version used to snap the
+  // screen back to the default version even though the edit itself had
+  // nothing to do with which version was selected. This keeps whatever
+  // version was being viewed selected, as long as it still exists in the
+  // updated recipe -- only falling back to the default version if it
+  // doesn't (e.g. it was just deleted).
   const updateRecipe = useCallback((updated: StoredRecipe) => {
     setCachedRecipe(updated);
-    applyRecipe(updated);
-  }, [applyRecipe]);
+    setRecipe(updated);
+    if (updated.current_version.id) {
+      setVersionContent((prev) => ({ ...prev, [updated.current_version.id!]: updated.current_version }));
+    }
+    const activeId = recipe?.versions[activeVersionIndex]?.id;
+    const stillThereIdx = activeId ? updated.versions.findIndex((v) => v.id === activeId) : -1;
+    if (stillThereIdx >= 0) {
+      setActiveVersionIndex(stillThereIdx);
+    } else {
+      const defaultIdx = updated.versions.findIndex((v) => v.id === updated.current_version.id);
+      setActiveVersionIndex(defaultIdx >= 0 ? defaultIdx : updated.versions.length - 1);
+    }
+  }, [recipe, activeVersionIndex]);
 
   const load = useCallback(async () => {
     // Render instantly from the cache if the Cookbook screen's background

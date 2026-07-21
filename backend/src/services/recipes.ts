@@ -101,6 +101,16 @@ async function assembleStoredRecipe(
   // isn't assignable to `typeof db` itself (it lacks the `$client` property
   // drizzle's factory return type carries).
   executor: Pick<typeof db, 'select'> = db,
+  // Whether `versions` should be summary-only (the new, smaller shape) or
+  // carry full ingredients/steps for every past version (the shape every
+  // route returned before this optimization). This never changes what's
+  // queried from the DB -- versionRows below always has full content either
+  // way, so this is purely a serialization choice -- it exists so a client
+  // that was built before `versions` became summary-only (i.e. doesn't know
+  // to pass `?versions=summary`) keeps getting exactly the response shape it
+  // already expects, forever, regardless of what the backend defaults to
+  // for everyone else. See wantsLeanVersions in app.ts.
+  leanVersions = true,
 ): Promise<StoredRecipe> {
   const [resolvedIsFavorite, versionRows] = await Promise.all([
     Promise.resolve(isFavorite),
@@ -126,7 +136,7 @@ async function assembleStoredRecipe(
     throw new Error(`Recipe ${recipeRow.id} has no versions`);
   }
 
-  const versions = versionRows.map(rowToVersionSummary);
+  const versions = leanVersions ? versionRows.map(rowToVersionSummary) : versionRows.map(rowToVersion);
 
   return {
     id: recipeRow.id,
@@ -245,7 +255,11 @@ export interface CreateRecipeInput {
   source_url?: string | null;
 }
 
-export async function createRecipeForUser(userId: string, input: CreateRecipeInput): Promise<StoredRecipe> {
+export async function createRecipeForUser(
+  userId: string,
+  input: CreateRecipeInput,
+  leanVersions = true,
+): Promise<StoredRecipe> {
   return db.transaction(async (tx) => {
     const [recipeRow] = await tx
       .insert(recipes)
@@ -278,7 +292,7 @@ export async function createRecipeForUser(userId: string, input: CreateRecipeInp
 
     await tx.update(recipes).set({ currentVersionId: versionRow!.id }).where(eq(recipes.id, recipeRow!.id));
 
-    return assembleStoredRecipe({ ...recipeRow!, currentVersionId: versionRow!.id }, false, tx);
+    return assembleStoredRecipe({ ...recipeRow!, currentVersionId: versionRow!.id }, false, tx, leanVersions);
   });
 }
 
@@ -293,6 +307,7 @@ export async function addRecipeVersion(
   recipeId: string,
   userId: string,
   input: AddVersionInput,
+  leanVersions = true,
 ): Promise<StoredRecipe | null> {
   const recipeRow = await db.transaction(async (tx) => {
     const [existing] = await tx
@@ -335,7 +350,7 @@ export async function addRecipeVersion(
   if (!recipeRow) {
     return null;
   }
-  return assembleStoredRecipe(recipeRow, getFavoriteFlag(userId, recipeId));
+  return assembleStoredRecipe(recipeRow, getFavoriteFlag(userId, recipeId), db, leanVersions);
 }
 
 export interface UpdateVersionInput {
@@ -354,6 +369,7 @@ export async function updateRecipeVersion(
   userId: string,
   versionId: string,
   input: UpdateVersionInput,
+  leanVersions = true,
 ): Promise<StoredRecipe | null> {
   const recipeRow = await db.transaction(async (tx) => {
     const [existing] = await tx
@@ -387,13 +403,14 @@ export async function updateRecipeVersion(
   if (!recipeRow) {
     return null;
   }
-  return assembleStoredRecipe(recipeRow, getFavoriteFlag(userId, recipeId));
+  return assembleStoredRecipe(recipeRow, getFavoriteFlag(userId, recipeId), db, leanVersions);
 }
 
 export async function setCurrentVersion(
   recipeId: string,
   userId: string,
   versionId: string,
+  leanVersions = true,
 ): Promise<StoredRecipe | null> {
   const recipeRow = await db.transaction(async (tx) => {
     const [version] = await tx
@@ -414,7 +431,7 @@ export async function setCurrentVersion(
   if (!recipeRow) {
     return null;
   }
-  return assembleStoredRecipe(recipeRow, getFavoriteFlag(userId, recipeId));
+  return assembleStoredRecipe(recipeRow, getFavoriteFlag(userId, recipeId), db, leanVersions);
 }
 
 /**
@@ -426,6 +443,7 @@ export async function deleteRecipeVersion(
   recipeId: string,
   userId: string,
   versionId: string,
+  leanVersions = true,
 ): Promise<{ deletedRecipe: boolean; recipe: StoredRecipe | null }> {
   const result = await db.transaction(async (tx) => {
     const [recipeRow] = await tx
@@ -468,7 +486,10 @@ export async function deleteRecipeVersion(
   if (result.deletedRecipe || !result.recipeRow) {
     return { deletedRecipe: true, recipe: null };
   }
-  return { deletedRecipe: false, recipe: await assembleStoredRecipe(result.recipeRow, getFavoriteFlag(userId, recipeId)) };
+  return {
+    deletedRecipe: false,
+    recipe: await assembleStoredRecipe(result.recipeRow, getFavoriteFlag(userId, recipeId), db, leanVersions),
+  };
 }
 
 /** Deletes the whole recipe family (all versions) in one step. */
@@ -480,7 +501,11 @@ export async function deleteRecipe(recipeId: string, userId: string): Promise<bo
   return result.length > 0;
 }
 
-export async function getRecipeByIdForUser(recipeId: string, userId: string): Promise<StoredRecipe | null> {
+export async function getRecipeByIdForUser(
+  recipeId: string,
+  userId: string,
+  leanVersions = true,
+): Promise<StoredRecipe | null> {
   // This is the hottest read in the app -- it re-runs every time the
   // Recipe Detail screen comes into focus. The favorite-flag query doesn't
   // depend on the recipe row at all (both just need recipeId/userId, which
@@ -496,7 +521,7 @@ export async function getRecipeByIdForUser(recipeId: string, userId: string): Pr
   if (!recipeRow) {
     return null;
   }
-  return assembleStoredRecipe(recipeRow, isFavoritePromise);
+  return assembleStoredRecipe(recipeRow, isFavoritePromise, db, leanVersions);
 }
 
 // Backs GET /v1/recipes/:id/versions/:versionId -- the on-demand fetch for
@@ -526,16 +551,25 @@ export async function getVersionContent(
 }
 
 // Backs the public GET /v1/recipes/:id/photo route -- deliberately NOT
-// scoped to a userId (unlike every other query in this file), since that
-// route is intentionally unauthenticated. Recipe photos are served by their
-// recipe's random UUID, the same way an unlisted link works: nothing lists
-// or guesses valid IDs, so this doesn't expose anything the JSON API
-// wouldn't already leak via the photo URL itself. Being unauthenticated is
-// what lets React Native's <Image> load and cache it directly, with no
-// custom auth header plumbing.
-export async function getRecipePhotoDataUrl(recipeId: string): Promise<string | null> {
-  const [row] = await db.select({ imageUrl: recipes.imageUrl }).from(recipes).where(eq(recipes.id, recipeId)).limit(1);
-  return row?.imageUrl ?? null;
+// scoped to a userId (unlike every other query in this file). That's safe
+// because the route requires a valid HMAC signature over id+updatedAt (see
+// verifyPhotoUrlSignature/buildPhotoUrl above) before this is ever called,
+// not because of anything about the UUID itself.
+//
+// Returns updatedAt alongside the image so the route can reject a
+// signature that's for an older version of this recipe -- otherwise `v`
+// would only ever function as a cache-buster, not a revocation boundary:
+// replacing or removing a photo wouldn't actually invalidate any
+// previously-issued signed URL for the old one, since it would just start
+// resolving to whatever the current photo happens to be instead.
+export async function getRecipePhotoDataUrl(recipeId: string): Promise<{ dataUrl: string; updatedAt: Date } | null> {
+  const [row] = await db
+    .select({ imageUrl: recipes.imageUrl, updatedAt: recipes.updatedAt })
+    .from(recipes)
+    .where(eq(recipes.id, recipeId))
+    .limit(1);
+  if (!row?.imageUrl) return null;
+  return { dataUrl: row.imageUrl, updatedAt: row.updatedAt };
 }
 
 const DATA_URL_PATTERN = /^data:([^;,]+);base64,(.+)$/s;
@@ -739,6 +773,7 @@ export async function setRecipeLinks(
   recipeId: string,
   userId: string,
   links: { url: string }[],
+  leanVersions = true,
 ): Promise<StoredRecipe | null> {
   const [updated] = await db
     .update(recipes)
@@ -749,13 +784,14 @@ export async function setRecipeLinks(
     .where(and(eq(recipes.id, recipeId), or(isNull(recipes.ownerUserId), eq(recipes.ownerUserId, userId))))
     .returning();
   if (!updated) return null;
-  return assembleStoredRecipe(updated, getFavoriteFlag(userId, recipeId));
+  return assembleStoredRecipe(updated, getFavoriteFlag(userId, recipeId), db, leanVersions);
 }
 
 export async function setRecipePhoto(
   recipeId: string,
   userId: string,
   imageUrl: string | null,
+  leanVersions = true,
 ): Promise<StoredRecipe | null> {
   const [updated] = await db
     .update(recipes)
@@ -763,7 +799,7 @@ export async function setRecipePhoto(
     .where(and(eq(recipes.id, recipeId), or(isNull(recipes.ownerUserId), eq(recipes.ownerUserId, userId))))
     .returning();
   if (!updated) return null;
-  return assembleStoredRecipe(updated, getFavoriteFlag(userId, recipeId));
+  return assembleStoredRecipe(updated, getFavoriteFlag(userId, recipeId), db, leanVersions);
 }
 
 export async function removeFromCookbook(userId: string, recipeId: string) {
