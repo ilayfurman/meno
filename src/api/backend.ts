@@ -307,26 +307,31 @@ function toImportOutcome(data: { recipe?: StoredRecipe; duplicate?: DuplicateCan
   return { kind: 'duplicate', existing: data.duplicate!, candidate: data.candidate! };
 }
 
-export async function importRecipeFromUrlViaBackend(url: string, force = false): Promise<ImportOutcome> {
+// `recipeId`, when passed, tells the backend to extract this as a new
+// version of that existing recipe (addRecipeVersion) instead of creating a
+// brand new one -- and to skip duplicate detection entirely, since there's
+// nothing to detect a duplicate of. See landImportedRecipe in the backend's
+// app.ts. Used by the "+ New version" action on Recipe Detail.
+export async function importRecipeFromUrlViaBackend(url: string, force = false, recipeId?: string): Promise<ImportOutcome> {
   const data = await backendFetch<{ recipe?: StoredRecipe; duplicate?: DuplicateCandidate; candidate?: CreateRecipePayload }>(
     `/v1/recipes/import-url?${LEAN_VERSIONS_QUERY}`,
-    { method: 'POST', body: { url, force } },
+    { method: 'POST', body: { url, force, recipe_id: recipeId } },
   );
   return toImportOutcome(data);
 }
 
-export async function importRecipeFromTextViaBackend(text: string, force = false): Promise<ImportOutcome> {
+export async function importRecipeFromTextViaBackend(text: string, force = false, recipeId?: string): Promise<ImportOutcome> {
   const data = await backendFetch<{ recipe?: StoredRecipe; duplicate?: DuplicateCandidate; candidate?: CreateRecipePayload }>(
     `/v1/recipes/import-text?${LEAN_VERSIONS_QUERY}`,
-    { method: 'POST', body: { text, force } },
+    { method: 'POST', body: { text, force, recipe_id: recipeId } },
   );
   return toImportOutcome(data);
 }
 
-export async function importRecipeFromImageViaBackend(dataUrl: string, force = false): Promise<ImportOutcome> {
+export async function importRecipeFromImageViaBackend(dataUrl: string, force = false, recipeId?: string): Promise<ImportOutcome> {
   const data = await backendFetch<{ recipe?: StoredRecipe; duplicate?: DuplicateCandidate; candidate?: CreateRecipePayload }>(
     `/v1/recipes/import-image?${LEAN_VERSIONS_QUERY}`,
-    { method: 'POST', body: { image: dataUrl, force } },
+    { method: 'POST', body: { image: dataUrl, force, recipe_id: recipeId } },
   );
   return toImportOutcome(data);
 }
@@ -334,6 +339,7 @@ export async function importRecipeFromImageViaBackend(dataUrl: string, force = f
 export async function importRecipeFromPdfViaBackend(
   file: { uri: string; name: string },
   force = false,
+  recipeId?: string,
 ): Promise<ImportOutcome> {
   const form = new FormData();
   form.append('file', {
@@ -342,6 +348,7 @@ export async function importRecipeFromPdfViaBackend(
     type: 'application/pdf',
   } as unknown as Blob);
   form.append('force', force ? 'true' : 'false');
+  if (recipeId) form.append('recipe_id', recipeId);
   const data = await backendFetch<{ recipe?: StoredRecipe; duplicate?: DuplicateCandidate; candidate?: CreateRecipePayload }>(
     `/v1/recipes/import-pdf?${LEAN_VERSIONS_QUERY}`,
     { method: 'POST', body: form },
@@ -389,6 +396,14 @@ export async function deleteRecipeVersionViaBackend(
 
 export async function deleteRecipeViaBackend(recipeId: string): Promise<void> {
   await backendFetch(`/v1/recipes/${recipeId}`, { method: 'DELETE' });
+}
+
+export async function setRecipeTitleViaBackend(recipeId: string, title: string): Promise<StoredRecipe> {
+  const data = await backendFetch<{ recipe: StoredRecipe }>(`/v1/recipes/${recipeId}/title?${LEAN_VERSIONS_QUERY}`, {
+    method: 'PUT',
+    body: { title },
+  });
+  return data.recipe;
 }
 
 // Full-replacement -- pass the whole current list of links (after

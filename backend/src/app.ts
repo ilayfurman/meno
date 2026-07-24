@@ -24,6 +24,7 @@ import {
   recipeSummaryListSchema,
   updateRecipeLinksSchema,
   updateRecipePhotoSchema,
+  updateRecipeTitleSchema,
   updateRecipeVersionSchema,
   type Recipe,
 } from './types/recipe.js';
@@ -57,7 +58,9 @@ import {
   setFavorite,
   setRecipeLinks,
   setRecipePhoto,
+  setRecipeTitle,
   updateRecipeVersion,
+  type CreateRecipeInput,
 } from './services/recipes.js';
 import { getPlan, getPreferences, updatePreferences } from './services/preferences.js';
 import { allowedImportDomains, env } from './config/env.js';
@@ -152,6 +155,41 @@ const versionsQuerySchema = z.object({ versions: z.enum(['summary', 'full']).opt
 function wantsLeanVersions(query: unknown): boolean {
   const parsed = versionsQuerySchema.safeParse(query);
   return parsed.success && parsed.data.versions === 'summary';
+}
+
+// Shared landing step for every import route (import-url, import-text,
+// import-pdf, import-image): once AI extraction (or JSON-LD parsing) has
+// produced a candidate recipe, this decides what to actually do with it.
+//
+// With no targetRecipeId, this is "create a brand new recipe" -- the
+// original behavior, unchanged: insert it and drop it into the user's
+// cookbook.
+//
+// With a targetRecipeId (the "+" next to a recipe's version strip in the
+// app), this is "add this as a new version of a recipe that already
+// exists" -- addRecipeVersion instead of createRecipeForUser, and
+// deliberately no saveRecipeToCookbook call, since the recipe's already
+// there. The caller is responsible for skipping duplicate-detection
+// entirely in this mode (see the `!parsed.data.recipe_id` checks in each
+// import route below) -- there's nothing to detect a duplicate of, since
+// the user already told us exactly which recipe this belongs to.
+async function landImportedRecipe(
+  userId: string,
+  candidate: CreateRecipeInput,
+  targetRecipeId: string | undefined,
+  leanVersions: boolean,
+) {
+  if (targetRecipeId) {
+    return addRecipeVersion(
+      targetRecipeId,
+      userId,
+      { ingredients: candidate.ingredients, steps: candidate.steps, change_note: null, set_as_current: true },
+      leanVersions,
+    );
+  }
+  const recipe = await createRecipeForUser(userId, candidate, leanVersions);
+  await saveRecipeToCookbook(userId, recipe.id);
+  return recipe;
 }
 
 export function createApp() {
@@ -571,6 +609,17 @@ export function createApp() {
       return reply.send({ ok: true });
     });
 
+    app.put('/v1/recipes/:id/title', async (request, reply) => {
+      const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
+      const body = updateRecipeTitleSchema.safeParse(request.body);
+      if (!params.success) return sendValidationError(reply, params.error.flatten());
+      if (!body.success) return sendValidationError(reply, body.error.flatten());
+
+      const recipe = await setRecipeTitle(params.data.id, request.auth.userId, body.data.title, wantsLeanVersions(request.query));
+      if (!recipe) return reply.notFound('Recipe not found');
+      return reply.send({ recipe });
+    });
+
     app.put('/v1/recipes/:id/links', async (request, reply) => {
       const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
       const body = updateRecipeLinksSchema.safeParse(request.body);
@@ -734,14 +783,14 @@ export function createApp() {
           source_type: 'link' as const,
           source_url: imported.source_url,
         };
-        if (!parsed.data.force) {
+        if (!parsed.data.force && !parsed.data.recipe_id) {
           const duplicate = await findDuplicateBySourceUrl(request.auth.userId, imported.source_url);
           if (duplicate) {
             return { duplicate, candidate };
           }
         }
-        const recipe = await createRecipeForUser(request.auth.userId, candidate, wantsLeanVersions(request.query));
-        await saveRecipeToCookbook(request.auth.userId, recipe.id);
+        const recipe = await landImportedRecipe(request.auth.userId, candidate, parsed.data.recipe_id, wantsLeanVersions(request.query));
+        if (!recipe) return reply.notFound('Recipe not found');
         return { recipe };
       }
 
@@ -773,14 +822,14 @@ export function createApp() {
       }
 
       const candidate = { ...extracted.recipe, source_type: 'link' as const, source_url: page.url };
-      if (!parsed.data.force) {
+      if (!parsed.data.force && !parsed.data.recipe_id) {
         const duplicate = await findDuplicateBySourceUrl(request.auth.userId, page.url);
         if (duplicate) {
           return { duplicate, candidate };
         }
       }
-      const recipe = await createRecipeForUser(request.auth.userId, candidate, wantsLeanVersions(request.query));
-      await saveRecipeToCookbook(request.auth.userId, recipe.id);
+      const recipe = await landImportedRecipe(request.auth.userId, candidate, parsed.data.recipe_id, wantsLeanVersions(request.query));
+      if (!recipe) return reply.notFound('Recipe not found');
 
       return { recipe };
     });
@@ -808,15 +857,15 @@ export function createApp() {
 
       const candidate = { ...extracted.recipe, source_type: 'text' as const };
 
-      if (!parsed.data.force) {
+      if (!parsed.data.force && !parsed.data.recipe_id) {
         const duplicate = await findDuplicateByTitle(request.auth.userId, candidate.title);
         if (duplicate) {
           return { duplicate, candidate };
         }
       }
 
-      const recipe = await createRecipeForUser(request.auth.userId, candidate, wantsLeanVersions(request.query));
-      await saveRecipeToCookbook(request.auth.userId, recipe.id);
+      const recipe = await landImportedRecipe(request.auth.userId, candidate, parsed.data.recipe_id, wantsLeanVersions(request.query));
+      if (!recipe) return reply.notFound('Recipe not found');
       return { recipe };
     });
 
@@ -846,8 +895,9 @@ export function createApp() {
       // request.file() surfaces any other multipart fields sent alongside the
       // file on file.fields -- each as { value } -- rather than as a typed
       // request.body the way a plain JSON route would.
-      const forceField = (file.fields as Record<string, { value?: unknown } | undefined>).force;
-      const force = typeof forceField?.value === 'string' && forceField.value === 'true';
+      const fields = file.fields as Record<string, { value?: unknown } | undefined>;
+      const force = typeof fields.force?.value === 'string' && fields.force.value === 'true';
+      const recipeId = typeof fields.recipe_id?.value === 'string' && fields.recipe_id.value ? fields.recipe_id.value : undefined;
 
       const extracted = await structureRecipeFromText(text);
       await db.insert(aiUsage).values({
@@ -866,15 +916,15 @@ export function createApp() {
 
       const candidate = { ...extracted.recipe, source_type: 'pdf' as const };
 
-      if (!force) {
+      if (!force && !recipeId) {
         const duplicate = await findDuplicateByTitle(request.auth.userId, candidate.title);
         if (duplicate) {
           return { duplicate, candidate };
         }
       }
 
-      const recipe = await createRecipeForUser(request.auth.userId, candidate, wantsLeanVersions(request.query));
-      await saveRecipeToCookbook(request.auth.userId, recipe.id);
+      const recipe = await landImportedRecipe(request.auth.userId, candidate, recipeId, wantsLeanVersions(request.query));
+      if (!recipe) return reply.notFound('Recipe not found');
 
       return { recipe };
     });
@@ -911,15 +961,15 @@ export function createApp() {
 
       const candidate = { ...extracted.recipe, source_type: 'image' as const };
 
-      if (!parsed.data.force) {
+      if (!parsed.data.force && !parsed.data.recipe_id) {
         const duplicate = await findDuplicateByTitle(request.auth.userId, candidate.title);
         if (duplicate) {
           return { duplicate, candidate };
         }
       }
 
-      const recipe = await createRecipeForUser(request.auth.userId, candidate, wantsLeanVersions(request.query));
-      await saveRecipeToCookbook(request.auth.userId, recipe.id);
+      const recipe = await landImportedRecipe(request.auth.userId, candidate, parsed.data.recipe_id, wantsLeanVersions(request.query));
+      if (!recipe) return reply.notFound('Recipe not found');
 
       return { recipe };
     });

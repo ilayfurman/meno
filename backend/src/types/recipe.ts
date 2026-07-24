@@ -135,6 +135,10 @@ export const updateRecipeLinksSchema = z.object({
 // the source, on top of the nosniff header the serve route also sets.
 const ALLOWED_PHOTO_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'] as const;
 
+export const updateRecipeTitleSchema = z.object({
+  title: z.string().trim().min(1).max(200),
+});
+
 export const updateRecipePhotoSchema = z.object({
   image_url: z
     .string()
@@ -169,9 +173,17 @@ export const extractedRecipeSchema = z.object({
   steps: z.array(stepSchema),
 });
 
+// `recipe_id`, when present on any of the three import schemas below, means
+// "extract this and add it as a new version of that existing recipe"
+// instead of "create a brand new recipe." See landImportedRecipe in app.ts
+// -- that path skips duplicate detection entirely (there's nothing to
+// detect a duplicate of; the caller already told us exactly which recipe
+// this belongs to) and calls addRecipeVersion instead of
+// createRecipeForUser.
 export const importTextSchema = z.object({
   text: z.string().min(1),
   force: z.boolean().default(false),
+  recipe_id: z.string().uuid().optional(),
 });
 
 export const importImageSchema = z.object({
@@ -179,6 +191,7 @@ export const importImageSchema = z.object({
   // in this app (recipe photo, profile photo).
   image: z.string().min(1),
   force: z.boolean().default(false),
+  recipe_id: z.string().uuid().optional(),
 });
 
 export const duplicateCandidateSchema = z.object({
@@ -256,6 +269,7 @@ export const eventCreateSchema = z.object({
 export const importUrlSchema = z.object({
   url: z.string().url(),
   force: z.boolean().default(false),
+  recipe_id: z.string().uuid().optional(),
 });
 
 export type Recipe = z.infer<typeof recipeSchema>;
