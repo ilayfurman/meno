@@ -766,6 +766,21 @@ export async function setFavorite(userId: string, recipeId: string, isFavorite: 
     .where(and(eq(cookbookItems.userId, userId), eq(cookbookItems.recipeId, recipeId)));
 }
 
+export async function setRecipeTitle(
+  recipeId: string,
+  userId: string,
+  title: string,
+  leanVersions = true,
+): Promise<StoredRecipe | null> {
+  const [updated] = await db
+    .update(recipes)
+    .set({ title, updatedAt: new Date() })
+    .where(and(eq(recipes.id, recipeId), or(isNull(recipes.ownerUserId), eq(recipes.ownerUserId, userId))))
+    .returning();
+  if (!updated) return null;
+  return assembleStoredRecipe(updated, getFavoriteFlag(userId, recipeId), db, leanVersions);
+}
+
 // Full-replacement: `links` is the recipe's complete link list after
 // whatever add/edit/remove the UI just did, not a single delta -- simpler
 // than separate add/edit/remove endpoints, and the list is always small.

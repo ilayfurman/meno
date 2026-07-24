@@ -26,9 +26,17 @@ interface ImportRecipeSheetProps {
   onDismiss: () => void;
   onImported: (recipe: StoredRecipe) => void;
   onViewExisting: (recipeId: string) => void;
+  // When set, this sheet extracts into a NEW VERSION of an existing recipe
+  // instead of creating a brand new one -- the "+" next to a recipe's
+  // version strip on Recipe Detail. The backend skips duplicate detection
+  // entirely in this mode (there's nothing to detect a duplicate of, since
+  // the caller already said exactly which recipe this belongs to), so the
+  // "duplicate" status branch below is simply never reached when this is
+  // set -- not worth stripping out, since it costs nothing to leave in.
+  targetRecipe?: { id: string; title: string };
 }
 
-export function ImportRecipeSheet({ visible, onDismiss, onImported, onViewExisting }: ImportRecipeSheetProps) {
+export function ImportRecipeSheet({ visible, onDismiss, onImported, onViewExisting, targetRecipe }: ImportRecipeSheetProps) {
   const [segment, setSegment] = useState<ImportSegment>('link');
   const [linkValue, setLinkValue] = useState('');
   const [textValue, setTextValue] = useState('');
@@ -123,12 +131,12 @@ export function ImportRecipeSheet({ visible, onDismiss, onImported, onViewExisti
     try {
       const outcome =
         segment === 'link'
-          ? await importRecipeFromUrlViaBackend(linkValue.trim())
+          ? await importRecipeFromUrlViaBackend(linkValue.trim(), false, targetRecipe?.id)
           : segment === 'photo' && photo
-            ? await importRecipeFromImageViaBackend(photo.dataUrl)
+            ? await importRecipeFromImageViaBackend(photo.dataUrl, false, targetRecipe?.id)
             : segment === 'pdf' && pdfFile
-              ? await importRecipeFromPdfViaBackend(pdfFile)
-              : await importRecipeFromTextViaBackend(textValue.trim());
+              ? await importRecipeFromPdfViaBackend(pdfFile, false, targetRecipe?.id)
+              : await importRecipeFromTextViaBackend(textValue.trim(), false, targetRecipe?.id);
 
       if (outcome.kind === 'duplicate') {
         setDuplicateMatch({ existing: outcome.existing, candidate: outcome.candidate });
@@ -205,15 +213,19 @@ export function ImportRecipeSheet({ visible, onDismiss, onImported, onViewExisti
         </View>
       ) : status === 'done' && importedRecipe ? (
         <View style={styles.processing}>
-          <Text style={styles.successText}>Saved to your Cookbook — {importedRecipe.title} is ready</Text>
+          <Text style={styles.successText}>
+            {targetRecipe ? `Added as a new version of ${targetRecipe.title}` : `Saved to your Cookbook — ${importedRecipe.title} is ready`}
+          </Text>
           <PressableScale onPress={handleDone} style={styles.doneButton}>
             <Text style={styles.primaryButtonText}>Done</Text>
           </PressableScale>
         </View>
       ) : (
         <>
-          <Text style={styles.title}>Add a recipe</Text>
-          <Text style={styles.subtitle}>We format it for your cookbook</Text>
+          <Text style={styles.title}>{targetRecipe ? 'Add a new version' : 'Add a recipe'}</Text>
+          <Text style={styles.subtitle}>
+            {targetRecipe ? `We'll extract it as a new version of "${targetRecipe.title}"` : 'We format it for your cookbook'}
+          </Text>
 
           <View style={styles.segmentTrack}>
             {(['link', 'photo', 'pdf', 'text'] as const).map((option) => {
@@ -284,7 +296,7 @@ export function ImportRecipeSheet({ visible, onDismiss, onImported, onViewExisti
             <View style={styles.primaryButtonWrap}>
               <PressableScale onPress={handleSubmit} style={styles.primaryButton}>
                 <Text style={styles.primaryButtonText} numberOfLines={1}>
-                  Add recipe
+                  {targetRecipe ? 'Add version' : 'Add recipe'}
                 </Text>
               </PressableScale>
             </View>

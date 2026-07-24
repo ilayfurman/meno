@@ -13,6 +13,7 @@ import { PressableScale } from '../components/PressableScale';
 import { BottomSheet } from '../components/BottomSheet';
 import { VideoAttachmentCard } from '../components/VideoAttachmentCard';
 import { ContinueIteratingSheet } from '../components/ContinueIteratingSheet';
+import { ImportRecipeSheet } from '../components/ImportRecipeSheet';
 import { IngredientsList } from '../components/IngredientsList';
 import { StepsList } from '../components/StepsList';
 import {
@@ -24,6 +25,7 @@ import {
   setFavoriteViaBackend,
   setRecipePhotoViaBackend,
   setRecipeLinksViaBackend,
+  setRecipeTitleViaBackend,
 } from '../api/backend';
 import { getCachedRecipe, removeCachedRecipe, setCachedRecipe } from '../state/recipeCache';
 import { buildRecipeHtml } from '../utils/recipeExport';
@@ -56,6 +58,9 @@ export function RecipeDetailScreen() {
   const [isDeletingRecipe, setIsDeletingRecipe] = useState(false);
   const [versionPendingDelete, setVersionPendingDelete] = useState<RecipeVersionSummary | null>(null);
   const [isDeletingVersion, setIsDeletingVersion] = useState(false);
+  const [titleEditing, setTitleEditing] = useState(false);
+  const [titleInput, setTitleInput] = useState('');
+  const [addVersionSheetOpen, setAddVersionSheetOpen] = useState(false);
   // recipe.versions only carries summaries (id/version_number/change_note) --
   // this caches full ingredients/steps per version id, fetched on demand the
   // first time a version pill other than the current one is tapped, so
@@ -321,6 +326,28 @@ export function RecipeDetailScreen() {
     }
   };
 
+  const handleStartEditTitle = () => {
+    setTitleInput(recipe.title);
+    setTitleEditing(true);
+  };
+
+  // Fires on both submit (return key) and blur, so tapping away saves just
+  // like pressing "done" does -- there's no separate cancel affordance, a
+  // no-op edit (empty, or unchanged) just quietly reverts to the existing
+  // title instead.
+  const handleSaveTitle = async () => {
+    const trimmed = titleInput.trim();
+    setTitleEditing(false);
+    if (!trimmed || trimmed === recipe.title) return;
+    try {
+      const updated = await setRecipeTitleViaBackend(recipe.id, trimmed);
+      updateRecipe(updated);
+    } catch (err) {
+      console.error('Failed to update recipe title:', err);
+      Alert.alert('Something went wrong', "That title couldn't be saved. Please try again.");
+    }
+  };
+
   return (
     <View style={styles.screen}>
       <ScrollView contentContainerStyle={styles.content}>
@@ -336,7 +363,22 @@ export function RecipeDetailScreen() {
           editing={photoUploading}
         />
 
-        <Text style={styles.title}>{recipe.title}</Text>
+        {titleEditing ? (
+          <TextInput
+            value={titleInput}
+            onChangeText={setTitleInput}
+            style={styles.titleInput}
+            autoFocus
+            selectTextOnFocus
+            returnKeyType="done"
+            onSubmitEditing={handleSaveTitle}
+            onBlur={handleSaveTitle}
+          />
+        ) : (
+          <PressableScale onPress={handleStartEditTitle}>
+            <Text style={styles.title}>{recipe.title}</Text>
+          </PressableScale>
+        )}
 
         <View style={styles.metaRow}>
           <TagPill label={`${recipe.total_time_minutes} min`} />
@@ -364,10 +406,10 @@ export function RecipeDetailScreen() {
           <Text style={styles.addVideoChevron}>›</Text>
         </PressableScale>
 
-        {recipe.versions.length > 1 ? (
-          <View>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.versionStrip}>
-              {recipe.versions.map((version, index) => {
+        <View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.versionStrip}>
+            {recipe.versions.length > 1 &&
+              recipe.versions.map((version, index) => {
                 const isDefault = version.id === recipe.current_version.id;
                 const isViewing = index === activeVersionIndex;
                 return (
@@ -384,17 +426,27 @@ export function RecipeDetailScreen() {
                   </PressableScale>
                 );
               })}
-            </ScrollView>
-            <Text style={styles.versionHint}>Long-press a version to delete it</Text>
-            {!isViewingDefault ? (
-              <PressableScale onPress={handleSetDefaultVersion} style={styles.setDefaultBanner}>
-                <Text style={styles.setDefaultBannerText}>
-                  Set v{activeVersionSummary.version_number} as the default version
-                </Text>
-              </PressableScale>
-            ) : null}
-          </View>
-        ) : null}
+            {/* Always present, even with just one version -- this is the
+                only entry point for creating a second one. Opens the same
+                import sheet used for adding a brand new recipe, just aimed
+                at this recipe instead of the cookbook. */}
+            <PressableScale onPress={() => setAddVersionSheetOpen(true)} style={styles.versionPillAdd}>
+              <Text style={styles.versionPillAddText}>+ New version</Text>
+            </PressableScale>
+          </ScrollView>
+          {recipe.versions.length > 1 ? (
+            <>
+              <Text style={styles.versionHint}>Long-press a version to delete it</Text>
+              {!isViewingDefault ? (
+                <PressableScale onPress={handleSetDefaultVersion} style={styles.setDefaultBanner}>
+                  <Text style={styles.setDefaultBannerText}>
+                    Set v{activeVersionSummary.version_number} as the default version
+                  </Text>
+                </PressableScale>
+              ) : null}
+            </>
+          ) : null}
+        </View>
 
         {activeVersionSummary.change_note ? (
           <View style={styles.changeNoteBox}>
@@ -522,6 +574,21 @@ export function RecipeDetailScreen() {
         </View>
       </BottomSheet>
 
+      <ImportRecipeSheet
+        visible={addVersionSheetOpen}
+        onDismiss={() => setAddVersionSheetOpen(false)}
+        targetRecipe={{ id: recipe.id, title: recipe.title }}
+        onImported={(updated) => {
+          // Deliberately jumps to the version that was just added (via
+          // applyRecipe) rather than preserving whatever was being viewed
+          // (updateRecipe's usual behavior) -- the whole point of adding a
+          // version is to look at it.
+          setCachedRecipe(updated);
+          applyRecipe(updated);
+        }}
+        onViewExisting={() => {}}
+      />
+
       <BottomSheet visible={versionPendingDelete !== null} onDismiss={() => setVersionPendingDelete(null)}>
         <View style={styles.deleteRecipeIconBadge}>
           <Text style={styles.deleteRecipeIconText}>🗑</Text>
@@ -584,6 +651,15 @@ const styles = StyleSheet.create({
     color: colors.foreground,
     fontSize: 24,
     marginTop: 8,
+  },
+  titleInput: {
+    fontFamily: typography.screenTitle.fontFamily,
+    color: colors.foreground,
+    fontSize: 24,
+    marginTop: 8,
+    borderBottomWidth: 1.5,
+    borderBottomColor: colors.accent,
+    paddingBottom: 2,
   },
   metaRow: {
     flexDirection: 'row',
@@ -650,6 +726,19 @@ const styles = StyleSheet.create({
   },
   versionPillTextActive: {
     color: '#fff',
+  },
+  versionPillAdd: {
+    borderRadius: spacing.radiusPill,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: colors.accent,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    marginRight: 8,
+  },
+  versionPillAddText: {
+    ...typography.versionPill,
+    color: colors.accent,
   },
   versionHint: {
     color: colors.subtext,
